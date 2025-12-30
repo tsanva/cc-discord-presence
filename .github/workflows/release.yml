@@ -1,0 +1,36 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+
+      - name: Build binaries
+        run: |
+          mkdir -p bin
+
+          GOOS=darwin GOARCH=arm64 go build -o bin/cc-discord-presence-darwin-arm64 .
+          GOOS=darwin GOARCH=amd64 go build -o bin/cc-discord-presence-darwin-amd64 .
+          GOOS=linux GOARCH=amd64 go build -o bin/cc-discord-presence-linux-amd64 .
+          GOOS=linux GOARCH=arm64 go build -o bin/cc-discord-presence-linux-arm64 .
+          GOOS=windows GOARCH=amd64 go build -o bin/cc-discord-presence-windows-amd64.exe .
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: bin/*
+          generate_release_notes: true
