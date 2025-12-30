@@ -98,7 +98,16 @@ Then copy `scripts/statusline-wrapper.sh` to `~/.claude/statusline-wrapper.sh`.
 
 **Note**: Restart Claude Code after setup for changes to take effect.
 
-When configured, the app will show: "✓ Found active session: project-name (using statusline data)"
+#### Verifying Your Setup
+
+Check which data source is being used by viewing the daemon log:
+```bash
+cat ~/.claude/discord-presence.log
+```
+
+You'll see one of:
+- `✓ Found active session: project-name (using statusline data)` - Best accuracy
+- `✓ Found active session: project-name (using JSONL fallback)` - Working, but consider setting up statusline
 
 ## Discord Presence Display
 
