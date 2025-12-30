@@ -1,0 +1,17 @@
+{
+  "name": "cc-discord-presence",
+  "owner": {
+    "name": "tsanva"
+  },
+  "metadata": {
+    "description": "Discord Rich Presence for Claude Code"
+  },
+  "plugins": [
+    {
+      "name": "cc-discord-presence",
+      "source": ".",
+      "description": "Show your Claude Code session on Discord with real-time project, model, tokens, and cost info",
+      "version": "1.0.0"
+    }
+  ]
+}

@@ -1,0 +1,25 @@
+# Binaries
+/cc-discord-presence
+bin/
+
+# Go
+vendor/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Local Claude Code data
+.claude/
+
+# Logs
+*.log
+
+# Project files
+TODO.md
