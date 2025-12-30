@@ -18,6 +18,7 @@ cc-discord-presence/
 ├── discord/
 │   └── client.go         # Minimal Discord IPC implementation (~200 lines)
 ├── scripts/
+│   ├── build.sh          # Cross-compile binaries for all platforms
 │   ├── start.sh          # Plugin hook: starts daemon on SessionStart
 │   ├── stop.sh           # Plugin hook: stops daemon on SessionEnd
 │   ├── statusline-wrapper.sh  # Wrapper script (copied to ~/.claude/)
@@ -95,12 +96,7 @@ Binaries are downloaded from GitHub Releases on first run. To create a new relea
 
 2. **Build all binaries:**
    ```bash
-   mkdir -p bin
-   GOOS=darwin GOARCH=arm64 go build -o bin/cc-discord-presence-darwin-arm64 .
-   GOOS=darwin GOARCH=amd64 go build -o bin/cc-discord-presence-darwin-amd64 .
-   GOOS=linux GOARCH=amd64 go build -o bin/cc-discord-presence-linux-amd64 .
-   GOOS=linux GOARCH=arm64 go build -o bin/cc-discord-presence-linux-arm64 .
-   GOOS=windows GOARCH=amd64 go build -o bin/cc-discord-presence-windows-amd64.exe .
+   ./scripts/build.sh
    ```
 
 3. **Commit and tag:**
