@@ -10,7 +10,7 @@ $PidFile = Join-Path $ClaudeDir "discord-presence.pid"
 $LogFile = Join-Path $ClaudeDir "discord-presence.log"
 $RefCountFile = Join-Path $ClaudeDir "discord-presence.refcount"
 $Repo = "tsanva/cc-discord-presence"
-$Version = "v1.0.1-dev"
+$Version = "v1.0.1"
 
 # Ensure directories exist
 if (-not (Test-Path $ClaudeDir)) {

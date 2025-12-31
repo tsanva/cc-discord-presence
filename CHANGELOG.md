@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [1.0.1-dev] - 2025-12-31
+## [1.0.1] - 2025-12-31
 
 ### Fixed
 - Multi-instance support: daemon now stays running when multiple Claude Code instances are open
@@ -24,6 +24,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Automatic binary download on first run
 - GitHub Actions workflow for automated releases
 
-[Unreleased]: https://github.com/tsanva/cc-discord-presence/compare/v1.0.1-dev...HEAD
-[1.0.1-dev]: https://github.com/tsanva/cc-discord-presence/compare/v1.0.0...v1.0.1-dev
+[Unreleased]: https://github.com/tsanva/cc-discord-presence/compare/v1.0.1...HEAD
+[1.0.1]: https://github.com/tsanva/cc-discord-presence/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/tsanva/cc-discord-presence/releases/tag/v1.0.0
