@@ -3,31 +3,48 @@
 # WARNING: Linux support is untested. Please report issues on GitHub.
 
 PID_FILE="$HOME/.claude/discord-presence.pid"
-REF_COUNT_FILE="$HOME/.claude/discord-presence.refcount"
+SESSIONS_DIR="$HOME/.claude/discord-presence-sessions"
 
-# Decrement reference count
-REF_COUNT=0
-if [[ -f "$REF_COUNT_FILE" ]]; then
-    REF_COUNT=$(cat "$REF_COUNT_FILE" 2>/dev/null || echo 0)
-fi
-REF_COUNT=$((REF_COUNT - 1))
-
-# Don't go below 0
-if [[ $REF_COUNT -lt 0 ]]; then
-    REF_COUNT=0
+# Get the Claude Code session PID (parent process)
+SESSION_PID="$$"
+if [[ -n "$PPID" ]]; then
+    SESSION_PID="$PPID"
 fi
 
-echo "$REF_COUNT" > "$REF_COUNT_FILE"
+# Remove this session's file
+rm -f "$SESSIONS_DIR/$SESSION_PID"
 
-# Only kill daemon if no more instances are using it
-if [[ $REF_COUNT -gt 0 ]]; then
-    echo "Discord Rich Presence still in use by $REF_COUNT instance(s)"
+# Count remaining active sessions (cleanup orphans while counting)
+count_active_sessions() {
+    local count=0
+    [[ -d "$SESSIONS_DIR" ]] || { echo 0; return; }
+    for session_file in "$SESSIONS_DIR"/*; do
+        [[ -f "$session_file" ]] || continue
+        local pid
+        pid=$(basename "$session_file")
+        # Check if process is still running
+        if kill -0 "$pid" 2>/dev/null; then
+            count=$((count + 1))
+        else
+            # Orphaned session file, clean it up
+            rm -f "$session_file"
+        fi
+    done
+    echo "$count"
+}
+
+ACTIVE_SESSIONS=$(count_active_sessions)
+
+# Only kill daemon if no more active sessions
+if [[ $ACTIVE_SESSIONS -gt 0 ]]; then
+    echo "Discord Rich Presence still in use by $ACTIVE_SESSIONS session(s)"
     exit 0
 fi
 
-# Clean up ref count file
-rm -f "$REF_COUNT_FILE"
+# Clean up sessions directory
+rm -rf "$SESSIONS_DIR"
 
+# Stop the daemon
 if [[ -f "$PID_FILE" ]]; then
     PID=$(cat "$PID_FILE")
     if kill -0 "$PID" 2>/dev/null; then
@@ -39,3 +56,6 @@ else
     # Fallback: kill by process name
     pkill -f cc-discord-presence 2>/dev/null || true
 fi
+
+# Clean up old refcount file if it exists (migration from old version)
+rm -f "$HOME/.claude/discord-presence.refcount"

@@ -3,31 +3,60 @@
 
 $ClaudeDir = Join-Path $env:USERPROFILE ".claude"
 $PidFile = Join-Path $ClaudeDir "discord-presence.pid"
-$RefCountFile = Join-Path $ClaudeDir "discord-presence.refcount"
+$SessionsDir = Join-Path $ClaudeDir "discord-presence-sessions"
 
-# Decrement reference count
-$RefCount = 0
-if (Test-Path $RefCountFile) {
-    $RefCount = [int](Get-Content $RefCountFile -ErrorAction SilentlyContinue)
+# Get the parent process ID (Claude Code session)
+$SessionPid = $PID
+try {
+    $ParentPid = (Get-CimInstance Win32_Process -Filter "ProcessId = $PID").ParentProcessId
+    if ($ParentPid) {
+        $SessionPid = $ParentPid
+    }
+} catch {}
+
+# Remove this session's file
+$SessionFile = Join-Path $SessionsDir $SessionPid
+if (Test-Path $SessionFile) {
+    Remove-Item $SessionFile -Force -ErrorAction SilentlyContinue
 }
-$RefCount--
 
-# Don't go below 0
-if ($RefCount -lt 0) {
-    $RefCount = 0
+# Count remaining active sessions (cleanup orphans while counting)
+function Get-ActiveSessionCount {
+    $count = 0
+    if (-not (Test-Path $SessionsDir)) { return 0 }
+
+    Get-ChildItem $SessionsDir -File | ForEach-Object {
+        $pid = $_.Name
+        try {
+            $process = Get-Process -Id $pid -ErrorAction SilentlyContinue
+            if ($process) {
+                $count++
+            } else {
+                # Orphaned session file, clean it up
+                Remove-Item $_.FullName -Force -ErrorAction SilentlyContinue
+            }
+        } catch {
+            # Process doesn't exist, clean up
+            Remove-Item $_.FullName -Force -ErrorAction SilentlyContinue
+        }
+    }
+    return $count
 }
 
-$RefCount | Out-File -FilePath $RefCountFile -Encoding ASCII
+$ActiveSessions = Get-ActiveSessionCount
 
-# Only kill daemon if no more instances are using it
-if ($RefCount -gt 0) {
-    Write-Host "Discord Rich Presence still in use by $RefCount instance(s)"
+# Only kill daemon if no more active sessions
+if ($ActiveSessions -gt 0) {
+    Write-Host "Discord Rich Presence still in use by $ActiveSessions session(s)"
     exit 0
 }
 
-# Clean up ref count file
-Remove-Item $RefCountFile -Force -ErrorAction SilentlyContinue
+# Clean up sessions directory
+if (Test-Path $SessionsDir) {
+    Remove-Item $SessionsDir -Recurse -Force -ErrorAction SilentlyContinue
+}
 
+# Stop the daemon
 if (Test-Path $PidFile) {
     $ProcessId = Get-Content $PidFile -ErrorAction SilentlyContinue
     if ($ProcessId) {
@@ -45,4 +74,10 @@ if (Test-Path $PidFile) {
         $Processes | Stop-Process -Force
         Write-Host "Discord Rich Presence stopped"
     }
+}
+
+# Clean up old refcount file if it exists (migration from old version)
+$RefCountFile = Join-Path $ClaudeDir "discord-presence.refcount"
+if (Test-Path $RefCountFile) {
+    Remove-Item $RefCountFile -Force -ErrorAction SilentlyContinue
 }
