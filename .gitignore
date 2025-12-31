@@ -15,9 +15,8 @@ vendor/
 .DS_Store
 Thumbs.db
 
-# Local Claude Code data (but keep skills)
-.claude/*
-!.claude/skills/
+# Local Claude Code data
+.claude/
 
 # Logs
 *.log
