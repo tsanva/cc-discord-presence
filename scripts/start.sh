@@ -10,7 +10,7 @@ PID_FILE="$HOME/.claude/discord-presence.pid"
 LOG_FILE="$HOME/.claude/discord-presence.log"
 SESSIONS_DIR="$HOME/.claude/discord-presence-sessions"
 REPO="tsanva/cc-discord-presence"
-VERSION="v1.0.1"
+VERSION="v1.0.2"
 
 # Ensure directories exist
 mkdir -p "$HOME/.claude"

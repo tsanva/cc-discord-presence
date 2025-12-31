@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.2] - 2025-12-31
+
+### Fixed
+- Replaced reference counting with PID-based session tracking
+  - Previous refcount could drift if sessions crashed or were killed
+  - Now each session registers with its PID in `~/.claude/discord-presence-sessions/`
+  - Orphaned sessions (dead PIDs) are automatically cleaned up
+  - Self-healing: no manual intervention needed after crashes
+
 ## [1.0.1] - 2025-12-31
 
 ### Fixed
@@ -24,6 +33,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Automatic binary download on first run
 - GitHub Actions workflow for automated releases
 
-[Unreleased]: https://github.com/tsanva/cc-discord-presence/compare/v1.0.1...HEAD
+[Unreleased]: https://github.com/tsanva/cc-discord-presence/compare/v1.0.2...HEAD
+[1.0.2]: https://github.com/tsanva/cc-discord-presence/compare/v1.0.1...v1.0.2
 [1.0.1]: https://github.com/tsanva/cc-discord-presence/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/tsanva/cc-discord-presence/releases/tag/v1.0.0
