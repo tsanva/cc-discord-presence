@@ -8,6 +8,7 @@ $BinDir = Join-Path $PluginRoot "bin"
 $ClaudeDir = Join-Path $env:USERPROFILE ".claude"
 $PidFile = Join-Path $ClaudeDir "discord-presence.pid"
 $LogFile = Join-Path $ClaudeDir "discord-presence.log"
+$RefCountFile = Join-Path $ClaudeDir "discord-presence.refcount"
 $Repo = "tsanva/cc-discord-presence"
 $Version = "v1.0.0"
 
@@ -17,6 +18,26 @@ if (-not (Test-Path $ClaudeDir)) {
 }
 if (-not (Test-Path $BinDir)) {
     New-Item -ItemType Directory -Path $BinDir | Out-Null
+}
+
+# Reference counting for multiple instances
+$RefCount = 0
+if (Test-Path $RefCountFile) {
+    $RefCount = [int](Get-Content $RefCountFile -ErrorAction SilentlyContinue)
+}
+$RefCount++
+$RefCount | Out-File -FilePath $RefCountFile -Encoding ASCII
+
+# If daemon is already running, just increment count and exit
+if (Test-Path $PidFile) {
+    $OldPid = Get-Content $PidFile -ErrorAction SilentlyContinue
+    if ($OldPid) {
+        $Process = Get-Process -Id $OldPid -ErrorAction SilentlyContinue
+        if ($Process) {
+            Write-Host "Discord Rich Presence already running (PID: $OldPid, instances: $RefCount)"
+            exit 0
+        }
+    }
 }
 
 $BinaryName = "cc-discord-presence-windows-amd64.exe"
@@ -42,21 +63,8 @@ if (-not (Test-Path $Binary)) {
     exit 1
 }
 
-# Kill any existing instance
-if (Test-Path $PidFile) {
-    $OldPid = Get-Content $PidFile -ErrorAction SilentlyContinue
-    if ($OldPid) {
-        $Process = Get-Process -Id $OldPid -ErrorAction SilentlyContinue
-        if ($Process) {
-            Stop-Process -Id $OldPid -Force -ErrorAction SilentlyContinue
-            Start-Sleep -Milliseconds 500
-        }
-    }
-    Remove-Item $PidFile -Force -ErrorAction SilentlyContinue
-}
-
 # Start the daemon in background
 $Process = Start-Process -FilePath $Binary -NoNewWindow -PassThru -RedirectStandardOutput $LogFile -RedirectStandardError $LogFile
 $Process.Id | Out-File -FilePath $PidFile -Encoding ASCII
 
-Write-Host "Discord Rich Presence started (PID: $($Process.Id))"
+Write-Host "Discord Rich Presence started (PID: $($Process.Id), instances: $RefCount)"

@@ -8,12 +8,30 @@ PLUGIN_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 BIN_DIR="$PLUGIN_ROOT/bin"
 PID_FILE="$HOME/.claude/discord-presence.pid"
 LOG_FILE="$HOME/.claude/discord-presence.log"
+REF_COUNT_FILE="$HOME/.claude/discord-presence.refcount"
 REPO="tsanva/cc-discord-presence"
 VERSION="v1.0.0"
 
 # Ensure directories exist
 mkdir -p "$HOME/.claude"
 mkdir -p "$BIN_DIR"
+
+# Reference counting for multiple instances
+REF_COUNT=0
+if [[ -f "$REF_COUNT_FILE" ]]; then
+    REF_COUNT=$(cat "$REF_COUNT_FILE" 2>/dev/null || echo 0)
+fi
+REF_COUNT=$((REF_COUNT + 1))
+echo "$REF_COUNT" > "$REF_COUNT_FILE"
+
+# If daemon is already running, just increment count and exit
+if [[ -f "$PID_FILE" ]]; then
+    OLD_PID=$(cat "$PID_FILE")
+    if kill -0 "$OLD_PID" 2>/dev/null; then
+        echo "Discord Rich Presence already running (PID: $OLD_PID, instances: $REF_COUNT)"
+        exit 0
+    fi
+fi
 
 # Detect platform and architecture
 OS=$(uname -s | tr '[:upper:]' '[:lower:]')
@@ -51,18 +69,8 @@ if [[ ! -x "$BINARY" ]]; then
     exit 1
 fi
 
-# Kill any existing instance
-if [[ -f "$PID_FILE" ]]; then
-    OLD_PID=$(cat "$PID_FILE")
-    if kill -0 "$OLD_PID" 2>/dev/null; then
-        kill "$OLD_PID" 2>/dev/null
-        sleep 0.5
-    fi
-    rm -f "$PID_FILE"
-fi
-
 # Start the daemon in background
 nohup "$BINARY" > "$LOG_FILE" 2>&1 &
 echo $! > "$PID_FILE"
 
-echo "Discord Rich Presence started (PID: $(cat "$PID_FILE"))"
+echo "Discord Rich Presence started (PID: $(cat "$PID_FILE"), instances: $REF_COUNT)"
