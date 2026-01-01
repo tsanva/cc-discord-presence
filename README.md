@@ -163,6 +163,34 @@ By default, this uses a shared Discord application ("Clawd Code"). If you want t
 4. Copy the **Application ID** and update `ClientID` in `main.go`
 5. Rebuild the binary
 
+## Uninstallation
+
+### Plugin Removal
+
+```bash
+claude plugin uninstall cc-discord-presence@cc-discord-presence
+```
+
+### Statusline Cleanup (if configured)
+
+If you set up statusline integration, restore your original settings:
+
+```bash
+# Remove the wrapper script
+rm ~/.claude/statusline-wrapper.sh
+
+# Restore your original statusline in settings.json:
+# Option 1: Point back to the default statusline.sh
+jq '.statusLine.command = "~/.claude/statusline.sh"' ~/.claude/settings.json > ~/.claude/settings.json.tmp \
+  && mv ~/.claude/settings.json.tmp ~/.claude/settings.json
+
+# Option 2: Remove statusline config entirely
+jq 'del(.statusLine)' ~/.claude/settings.json > ~/.claude/settings.json.tmp \
+  && mv ~/.claude/settings.json.tmp ~/.claude/settings.json
+```
+
+Restart Claude Code after making changes.
+
 ## Privacy
 
 This application runs entirely locally and does not collect any data. See [PRIVACY.md](PRIVACY.md) for details.
