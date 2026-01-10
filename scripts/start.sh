@@ -121,15 +121,16 @@ fi
 
 # Start the daemon in background
 if $IS_WINDOWS; then
-    # On Windows, use cmd to start the process in background
-    cmd //c "start /B \"\" \"$BINARY\"" > "$LOG_FILE" 2>&1
-    # Give it a moment to start and find the PID
-    sleep 1
-    # Find PID by process name
-    DAEMON_PID=$(tasklist //FI "IMAGENAME eq $BINARY_NAME" //FO CSV //NH 2>/dev/null | head -1 | cut -d',' -f2 | tr -d '"')
-    if [[ -n "$DAEMON_PID" ]]; then
-        echo "$DAEMON_PID" > "$PID_FILE"
-    fi
+    # On Windows, convert path to Windows format and use PowerShell
+    WIN_BINARY=$(cygpath -w "$BINARY" 2>/dev/null || echo "$BINARY")
+    WIN_LOG=$(cygpath -w "$LOG_FILE" 2>/dev/null || echo "$LOG_FILE")
+    WIN_PID_FILE=$(cygpath -w "$PID_FILE" 2>/dev/null || echo "$PID_FILE")
+
+    # Use PowerShell to start the process and capture PID
+    powershell.exe -NoProfile -Command "
+        \$process = Start-Process -FilePath '$WIN_BINARY' -WindowStyle Hidden -PassThru -RedirectStandardOutput '$WIN_LOG' -RedirectStandardError '$WIN_LOG'
+        \$process.Id | Out-File -FilePath '$WIN_PID_FILE' -Encoding ASCII -NoNewline
+    " 2>/dev/null
 else
     nohup "$BINARY" > "$LOG_FILE" 2>&1 &
     echo $! > "$PID_FILE"
