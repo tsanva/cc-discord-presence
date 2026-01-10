@@ -5,9 +5,7 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
-	"net"
 	"os"
-	"runtime"
 	"time"
 )
 
@@ -28,10 +26,17 @@ type Activity struct {
 	StartTime  *time.Time `json:"-"`
 }
 
+// Conn interface for both unix sockets and windows pipes
+type Conn interface {
+	Read(b []byte) (n int, err error)
+	Write(b []byte) (n int, err error)
+	Close() error
+}
+
 // Client handles Discord RPC connection
 type Client struct {
 	clientID string
-	conn     net.Conn
+	conn     Conn
 }
 
 // NewClient creates a new Discord RPC client
@@ -41,14 +46,9 @@ func NewClient(clientID string) *Client {
 
 // Connect establishes connection to Discord
 func (c *Client) Connect() error {
-	socket, err := c.getIPCPath()
+	conn, err := c.connectToDiscord()
 	if err != nil {
 		return err
-	}
-
-	conn, err := net.Dial(socket.network, socket.address)
-	if err != nil {
-		return fmt.Errorf("failed to connect to Discord: %w", err)
 	}
 	c.conn = conn
 
@@ -132,56 +132,6 @@ func (c *Client) Close() error {
 		return c.conn.Close()
 	}
 	return nil
-}
-
-type socketInfo struct {
-	network string
-	address string
-}
-
-func (c *Client) getIPCPath() (socketInfo, error) {
-	for i := 0; i < 10; i++ {
-		path := c.getSocketPath(i)
-		if path.address != "" {
-			return path, nil
-		}
-	}
-	return socketInfo{}, fmt.Errorf("Discord IPC socket not found")
-}
-
-func (c *Client) getSocketPath(i int) socketInfo {
-	switch runtime.GOOS {
-	case "darwin", "linux":
-		// Try various temp directories
-		dirs := []string{
-			os.Getenv("XDG_RUNTIME_DIR"),
-			os.Getenv("TMPDIR"),
-			os.Getenv("TMP"),
-			os.Getenv("TEMP"),
-			"/tmp",
-		}
-		for _, dir := range dirs {
-			if dir == "" {
-				continue
-			}
-			path := fmt.Sprintf("%s/discord-ipc-%d", dir, i)
-			if _, err := os.Stat(path); err == nil {
-				return socketInfo{"unix", path}
-			}
-			// Also try snap/flatpak paths
-			snapPath := fmt.Sprintf("%s/snap.discord/discord-ipc-%d", dir, i)
-			if _, err := os.Stat(snapPath); err == nil {
-				return socketInfo{"unix", snapPath}
-			}
-			flatpakPath := fmt.Sprintf("%s/app/com.discordapp.Discord/discord-ipc-%d", dir, i)
-			if _, err := os.Stat(flatpakPath); err == nil {
-				return socketInfo{"unix", flatpakPath}
-			}
-		}
-	case "windows":
-		return socketInfo{"unix", fmt.Sprintf(`\\?\pipe\discord-ipc-%d`, i)}
-	}
-	return socketInfo{}
 }
 
 func (c *Client) send(opcode int, data interface{}) error {
