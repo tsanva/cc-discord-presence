@@ -5,7 +5,7 @@
 set -e
 
 PLUGIN_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-BIN_DIR="$PLUGIN_ROOT/bin"
+BIN_DIR="$HOME/.claude/bin"
 PID_FILE="$HOME/.claude/discord-presence.pid"
 LOG_FILE="$HOME/.claude/discord-presence.log"
 SESSIONS_DIR="$HOME/.claude/discord-presence-sessions"
@@ -34,35 +34,47 @@ mkdir -p "$HOME/.claude"
 mkdir -p "$BIN_DIR"
 mkdir -p "$SESSIONS_DIR"
 
-# Get the Claude Code session PID (parent process)
-SESSION_PID="$$"
-# Try to get the actual parent PID if available
-if [[ -n "$PPID" ]]; then
-    SESSION_PID="$PPID"
+# Session tracking approach depends on platform
+# Windows (Git Bash): Use counter file since PPID is unreliable across script invocations
+# Unix: Use PID-based tracking
+
+REFCOUNT_FILE="$HOME/.claude/discord-presence.refcount"
+
+if $IS_WINDOWS; then
+    # Windows: Use simple refcount approach
+    # Read current count, increment, write back
+    if [[ -f "$REFCOUNT_FILE" ]]; then
+        CURRENT_COUNT=$(cat "$REFCOUNT_FILE" 2>/dev/null || echo "0")
+    else
+        CURRENT_COUNT=0
+    fi
+    ACTIVE_SESSIONS=$((CURRENT_COUNT + 1))
+    echo "$ACTIVE_SESSIONS" > "$REFCOUNT_FILE"
+else
+    # Unix: Use PID-based tracking
+    SESSION_PID="$$"
+    if [[ -n "$PPID" ]]; then
+        SESSION_PID="$PPID"
+    fi
+    echo "$SESSION_PID" > "$SESSIONS_DIR/$SESSION_PID"
+
+    # Count active sessions (cleanup orphans while counting)
+    count_active_sessions() {
+        local count=0
+        for session_file in "$SESSIONS_DIR"/*; do
+            [[ -f "$session_file" ]] || continue
+            local pid
+            pid=$(basename "$session_file")
+            if process_exists "$pid"; then
+                count=$((count + 1))
+            else
+                rm -f "$session_file"
+            fi
+        done
+        echo "$count"
+    }
+    ACTIVE_SESSIONS=$(count_active_sessions)
 fi
-
-# Register this session
-echo "$SESSION_PID" > "$SESSIONS_DIR/$SESSION_PID"
-
-# Count active sessions (cleanup orphans while counting)
-count_active_sessions() {
-    local count=0
-    for session_file in "$SESSIONS_DIR"/*; do
-        [[ -f "$session_file" ]] || continue
-        local pid
-        pid=$(basename "$session_file")
-        # Check if process is still running
-        if process_exists "$pid"; then
-            count=$((count + 1))
-        else
-            # Orphaned session file, clean it up
-            rm -f "$session_file"
-        fi
-    done
-    echo "$count"
-}
-
-ACTIVE_SESSIONS=$(count_active_sessions)
 
 # If daemon is already running, just exit
 if [[ -f "$PID_FILE" ]]; then
