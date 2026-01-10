@@ -4,22 +4,24 @@
 
 set -e
 
-PLUGIN_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-BIN_DIR="$HOME/.claude/bin"
-PID_FILE="$HOME/.claude/discord-presence.pid"
-LOG_FILE="$HOME/.claude/discord-presence.log"
-SESSIONS_DIR="$HOME/.claude/discord-presence-sessions"
+# Configuration
+CLAUDE_DIR="$HOME/.claude"
+BIN_DIR="$CLAUDE_DIR/bin"
+PID_FILE="$CLAUDE_DIR/discord-presence.pid"
+LOG_FILE="$CLAUDE_DIR/discord-presence.log"
+SESSIONS_DIR="$CLAUDE_DIR/discord-presence-sessions"
+REFCOUNT_FILE="$CLAUDE_DIR/discord-presence.refcount"
 REPO="tsanva/cc-discord-presence"
 VERSION="v1.0.2"
 
-# Detect Windows (Git Bash/MSYS/Cygwin) early
-_OS=$(uname -s | tr '[:upper:]' '[:lower:]')
+# Detect platform
+OS=$(uname -s | tr '[:upper:]' '[:lower:]')
 IS_WINDOWS=false
-case "$_OS" in
-    mingw*|msys*|cygwin*) IS_WINDOWS=true ;;
+case "$OS" in
+    mingw*|msys*|cygwin*) IS_WINDOWS=true; OS="windows" ;;
 esac
 
-# Process check function (cross-platform)
+# Cross-platform process check
 process_exists() {
     local pid=$1
     if $IS_WINDOWS; then
@@ -30,50 +32,28 @@ process_exists() {
 }
 
 # Ensure directories exist
-mkdir -p "$HOME/.claude"
-mkdir -p "$BIN_DIR"
-mkdir -p "$SESSIONS_DIR"
+mkdir -p "$CLAUDE_DIR" "$BIN_DIR" "$SESSIONS_DIR"
 
-# Session tracking approach depends on platform
-# Windows (Git Bash): Use counter file since PPID is unreliable across script invocations
-# Unix: Use PID-based tracking
-
-REFCOUNT_FILE="$HOME/.claude/discord-presence.refcount"
-
+# Session tracking: Windows uses refcount (PPID unreliable), Unix uses PID files
 if $IS_WINDOWS; then
-    # Windows: Use simple refcount approach
-    # Read current count, increment, write back
-    if [[ -f "$REFCOUNT_FILE" ]]; then
-        CURRENT_COUNT=$(cat "$REFCOUNT_FILE" 2>/dev/null || echo "0")
-    else
-        CURRENT_COUNT=0
-    fi
+    CURRENT_COUNT=$(cat "$REFCOUNT_FILE" 2>/dev/null || echo "0")
     ACTIVE_SESSIONS=$((CURRENT_COUNT + 1))
     echo "$ACTIVE_SESSIONS" > "$REFCOUNT_FILE"
 else
-    # Unix: Use PID-based tracking
-    SESSION_PID="$$"
-    if [[ -n "$PPID" ]]; then
-        SESSION_PID="$PPID"
-    fi
+    SESSION_PID="${PPID:-$$}"
     echo "$SESSION_PID" > "$SESSIONS_DIR/$SESSION_PID"
 
-    # Count active sessions (cleanup orphans while counting)
-    count_active_sessions() {
-        local count=0
-        for session_file in "$SESSIONS_DIR"/*; do
-            [[ -f "$session_file" ]] || continue
-            local pid
-            pid=$(basename "$session_file")
-            if process_exists "$pid"; then
-                count=$((count + 1))
-            else
-                rm -f "$session_file"
-            fi
-        done
-        echo "$count"
-    }
-    ACTIVE_SESSIONS=$(count_active_sessions)
+    # Count active sessions and clean up orphans
+    ACTIVE_SESSIONS=0
+    for session_file in "$SESSIONS_DIR"/*; do
+        [[ -f "$session_file" ]] || continue
+        pid=$(basename "$session_file")
+        if process_exists "$pid"; then
+            ACTIVE_SESSIONS=$((ACTIVE_SESSIONS + 1))
+        else
+            rm -f "$session_file"
+        fi
+    done
 fi
 
 # If daemon is already running, just exit
@@ -85,15 +65,8 @@ if [[ -f "$PID_FILE" ]]; then
     fi
 fi
 
-# Detect platform and architecture
-OS=$(uname -s | tr '[:upper:]' '[:lower:]')
+# Detect architecture
 ARCH=$(uname -m)
-
-# Detect Windows (Git Bash/MSYS/Cygwin)
-case "$OS" in
-    mingw*|msys*|cygwin*) OS="windows" ;;
-esac
-
 case "$ARCH" in
     x86_64) ARCH="amd64" ;;
     aarch64|arm64) ARCH="arm64" ;;

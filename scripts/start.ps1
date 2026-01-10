@@ -3,30 +3,23 @@
 
 $ErrorActionPreference = "Stop"
 
-$PluginRoot = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
+# Configuration
 $ClaudeDir = Join-Path $env:USERPROFILE ".claude"
 $BinDir = Join-Path $ClaudeDir "bin"
 $PidFile = Join-Path $ClaudeDir "discord-presence.pid"
 $LogFile = Join-Path $ClaudeDir "discord-presence.log"
+$RefcountFile = Join-Path $ClaudeDir "discord-presence.refcount"
 $Repo = "tsanva/cc-discord-presence"
 $Version = "v1.0.2"
 
 # Ensure directories exist
-if (-not (Test-Path $ClaudeDir)) {
-    New-Item -ItemType Directory -Path $ClaudeDir | Out-Null
-}
-if (-not (Test-Path $BinDir)) {
-    New-Item -ItemType Directory -Path $BinDir | Out-Null
-}
+New-Item -ItemType Directory -Path $ClaudeDir -Force | Out-Null
+New-Item -ItemType Directory -Path $BinDir -Force | Out-Null
 
-# Use refcount approach for session tracking on Windows
-# (PID-based tracking is unreliable because PowerShell/bash parent processes vary)
-$RefcountFile = Join-Path $ClaudeDir "discord-presence.refcount"
-
+# Session tracking: Use refcount (PID-based tracking is unreliable on Windows)
+$CurrentCount = 0
 if (Test-Path $RefcountFile) {
     $CurrentCount = [int](Get-Content $RefcountFile -ErrorAction SilentlyContinue)
-} else {
-    $CurrentCount = 0
 }
 $ActiveSessions = $CurrentCount + 1
 $ActiveSessions | Out-File -FilePath $RefcountFile -Encoding ASCII -NoNewline

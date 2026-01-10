@@ -2,18 +2,20 @@
 # Stop Discord Rich Presence daemon
 # WARNING: Linux support is untested. Please report issues on GitHub.
 
-PID_FILE="$HOME/.claude/discord-presence.pid"
-SESSIONS_DIR="$HOME/.claude/discord-presence-sessions"
-REFCOUNT_FILE="$HOME/.claude/discord-presence.refcount"
+# Configuration
+CLAUDE_DIR="$HOME/.claude"
+PID_FILE="$CLAUDE_DIR/discord-presence.pid"
+SESSIONS_DIR="$CLAUDE_DIR/discord-presence-sessions"
+REFCOUNT_FILE="$CLAUDE_DIR/discord-presence.refcount"
 
-# Detect Windows (Git Bash/MSYS/Cygwin)
+# Detect platform
 OS=$(uname -s | tr '[:upper:]' '[:lower:]')
 IS_WINDOWS=false
 case "$OS" in
     mingw*|msys*|cygwin*) IS_WINDOWS=true ;;
 esac
 
-# Process check function (cross-platform)
+# Cross-platform process operations
 process_exists() {
     local pid=$1
     if $IS_WINDOWS; then
@@ -23,7 +25,6 @@ process_exists() {
     fi
 }
 
-# Kill process function (cross-platform)
 kill_process() {
     local pid=$1
     if $IS_WINDOWS; then
@@ -33,60 +34,40 @@ kill_process() {
     fi
 }
 
-# Session tracking depends on platform
+# Session tracking: Windows uses refcount, Unix uses PID files
 if $IS_WINDOWS; then
-    # Windows: Use refcount approach
-    if [[ -f "$REFCOUNT_FILE" ]]; then
-        CURRENT_COUNT=$(cat "$REFCOUNT_FILE" 2>/dev/null || echo "1")
-    else
-        CURRENT_COUNT=1
-    fi
+    CURRENT_COUNT=$(cat "$REFCOUNT_FILE" 2>/dev/null || echo "1")
     ACTIVE_SESSIONS=$((CURRENT_COUNT - 1))
-    if [[ $ACTIVE_SESSIONS -lt 0 ]]; then
-        ACTIVE_SESSIONS=0
-    fi
+    [[ $ACTIVE_SESSIONS -lt 0 ]] && ACTIVE_SESSIONS=0
 
     if [[ $ACTIVE_SESSIONS -gt 0 ]]; then
         echo "$ACTIVE_SESSIONS" > "$REFCOUNT_FILE"
         echo "Discord Rich Presence still in use by $ACTIVE_SESSIONS session(s)"
         exit 0
     fi
-
-    # No more sessions, clean up refcount file
     rm -f "$REFCOUNT_FILE"
 else
-    # Unix: Use PID-based tracking
-    SESSION_PID="$$"
-    if [[ -n "$PPID" ]]; then
-        SESSION_PID="$PPID"
-    fi
+    SESSION_PID="${PPID:-$$}"
     rm -f "$SESSIONS_DIR/$SESSION_PID"
 
-    # Count remaining active sessions (cleanup orphans while counting)
-    count_active_sessions() {
-        local count=0
-        [[ -d "$SESSIONS_DIR" ]] || { echo 0; return; }
+    # Count remaining active sessions and clean up orphans
+    ACTIVE_SESSIONS=0
+    if [[ -d "$SESSIONS_DIR" ]]; then
         for session_file in "$SESSIONS_DIR"/*; do
             [[ -f "$session_file" ]] || continue
-            local pid
             pid=$(basename "$session_file")
             if process_exists "$pid"; then
-                count=$((count + 1))
+                ACTIVE_SESSIONS=$((ACTIVE_SESSIONS + 1))
             else
                 rm -f "$session_file"
             fi
         done
-        echo "$count"
-    }
-
-    ACTIVE_SESSIONS=$(count_active_sessions)
+    fi
 
     if [[ $ACTIVE_SESSIONS -gt 0 ]]; then
         echo "Discord Rich Presence still in use by $ACTIVE_SESSIONS session(s)"
         exit 0
     fi
-
-    # Clean up sessions directory
     rm -rf "$SESSIONS_DIR"
 fi
 

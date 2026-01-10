@@ -1,21 +1,17 @@
 # Stop Discord Rich Presence daemon (Windows)
 # WARNING: Windows support is untested. Please report issues on GitHub.
 
+# Configuration
 $ClaudeDir = Join-Path $env:USERPROFILE ".claude"
 $PidFile = Join-Path $ClaudeDir "discord-presence.pid"
 $RefcountFile = Join-Path $ClaudeDir "discord-presence.refcount"
 
-# Use refcount approach for session tracking on Windows
-# (PID-based tracking is unreliable because PowerShell/bash parent processes vary)
+# Session tracking: Use refcount (PID-based tracking is unreliable on Windows)
+$CurrentCount = 1
 if (Test-Path $RefcountFile) {
     $CurrentCount = [int](Get-Content $RefcountFile -ErrorAction SilentlyContinue)
-} else {
-    $CurrentCount = 1
 }
-$ActiveSessions = $CurrentCount - 1
-if ($ActiveSessions -lt 0) {
-    $ActiveSessions = 0
-}
+$ActiveSessions = [Math]::Max(0, $CurrentCount - 1)
 
 if ($ActiveSessions -gt 0) {
     $ActiveSessions | Out-File -FilePath $RefcountFile -Encoding ASCII -NoNewline
@@ -24,9 +20,7 @@ if ($ActiveSessions -gt 0) {
 }
 
 # No more sessions, clean up refcount file
-if (Test-Path $RefcountFile) {
-    Remove-Item $RefcountFile -Force -ErrorAction SilentlyContinue
-}
+Remove-Item $RefcountFile -Force -ErrorAction SilentlyContinue
 
 # Stop the daemon
 if (Test-Path $PidFile) {
