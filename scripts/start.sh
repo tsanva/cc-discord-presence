@@ -125,8 +125,8 @@ if $IS_WINDOWS; then
     WIN_BINARY=$(cygpath -w "$BINARY" 2>/dev/null || echo "$BINARY")
     WIN_PID_FILE=$(cygpath -w "$PID_FILE" 2>/dev/null || echo "$PID_FILE")
 
-    # Use PowerShell to start the process and capture PID
-    powershell.exe -NoProfile -Command '$process = Start-Process -FilePath "'"$WIN_BINARY"'" -WindowStyle Hidden -PassThru; $process.Id | Out-File -FilePath "'"$WIN_PID_FILE"'" -Encoding ASCII -NoNewline' 2>/dev/null
+    # Use PowerShell to start the process and capture PID (hidden window)
+    powershell.exe -NoProfile -WindowStyle Hidden -Command '$process = Start-Process -FilePath "'"$WIN_BINARY"'" -WindowStyle Hidden -PassThru; $process.Id | Out-File -FilePath "'"$WIN_PID_FILE"'" -Encoding ASCII -NoNewline' 2>/dev/null
 else
     nohup "$BINARY" > "$LOG_FILE" 2>&1 &
     echo $! > "$PID_FILE"
