@@ -12,6 +12,23 @@ SESSIONS_DIR="$HOME/.claude/discord-presence-sessions"
 REPO="tsanva/cc-discord-presence"
 VERSION="v1.0.2"
 
+# Detect Windows (Git Bash/MSYS/Cygwin) early
+_OS=$(uname -s | tr '[:upper:]' '[:lower:]')
+IS_WINDOWS=false
+case "$_OS" in
+    mingw*|msys*|cygwin*) IS_WINDOWS=true ;;
+esac
+
+# Process check function (cross-platform)
+process_exists() {
+    local pid=$1
+    if $IS_WINDOWS; then
+        tasklist //FI "PID eq $pid" 2>/dev/null | grep -q "$pid"
+    else
+        kill -0 "$pid" 2>/dev/null
+    fi
+}
+
 # Ensure directories exist
 mkdir -p "$HOME/.claude"
 mkdir -p "$BIN_DIR"
@@ -35,7 +52,7 @@ count_active_sessions() {
         local pid
         pid=$(basename "$session_file")
         # Check if process is still running
-        if kill -0 "$pid" 2>/dev/null; then
+        if process_exists "$pid"; then
             count=$((count + 1))
         else
             # Orphaned session file, clean it up
@@ -50,7 +67,7 @@ ACTIVE_SESSIONS=$(count_active_sessions)
 # If daemon is already running, just exit
 if [[ -f "$PID_FILE" ]]; then
     OLD_PID=$(cat "$PID_FILE")
-    if kill -0 "$OLD_PID" 2>/dev/null; then
+    if process_exists "$OLD_PID"; then
         echo "Discord Rich Presence already running (PID: $OLD_PID, sessions: $ACTIVE_SESSIONS)"
         exit 0
     fi
@@ -60,16 +77,24 @@ fi
 OS=$(uname -s | tr '[:upper:]' '[:lower:]')
 ARCH=$(uname -m)
 
+# Detect Windows (Git Bash/MSYS/Cygwin)
+case "$OS" in
+    mingw*|msys*|cygwin*) OS="windows" ;;
+esac
+
 case "$ARCH" in
     x86_64) ARCH="amd64" ;;
     aarch64|arm64) ARCH="arm64" ;;
 esac
 
 BINARY_NAME="cc-discord-presence-${OS}-${ARCH}"
+if [[ "$OS" == "windows" ]]; then
+    BINARY_NAME="${BINARY_NAME}.exe"
+fi
 BINARY="$BIN_DIR/$BINARY_NAME"
 
 # Download binary if not present
-if [[ ! -x "$BINARY" ]]; then
+if [[ ! -f "$BINARY" ]]; then
     echo "Downloading cc-discord-presence for ${OS}-${ARCH}..."
 
     DOWNLOAD_URL="https://github.com/${REPO}/releases/download/${VERSION}/${BINARY_NAME}"
@@ -83,17 +108,31 @@ if [[ ! -x "$BINARY" ]]; then
         exit 1
     fi
 
-    chmod +x "$BINARY"
+    if ! $IS_WINDOWS; then
+        chmod +x "$BINARY"
+    fi
     echo "Downloaded successfully!"
 fi
 
-if [[ ! -x "$BINARY" ]]; then
+if [[ ! -f "$BINARY" ]]; then
     echo "Error: Binary not found at $BINARY" >&2
     exit 1
 fi
 
 # Start the daemon in background
-nohup "$BINARY" > "$LOG_FILE" 2>&1 &
-echo $! > "$PID_FILE"
+if $IS_WINDOWS; then
+    # On Windows, use cmd to start the process in background
+    cmd //c "start /B \"\" \"$BINARY\"" > "$LOG_FILE" 2>&1
+    # Give it a moment to start and find the PID
+    sleep 1
+    # Find PID by process name
+    DAEMON_PID=$(tasklist //FI "IMAGENAME eq $BINARY_NAME" //FO CSV //NH 2>/dev/null | head -1 | cut -d',' -f2 | tr -d '"')
+    if [[ -n "$DAEMON_PID" ]]; then
+        echo "$DAEMON_PID" > "$PID_FILE"
+    fi
+else
+    nohup "$BINARY" > "$LOG_FILE" 2>&1 &
+    echo $! > "$PID_FILE"
+fi
 
-echo "Discord Rich Presence started (PID: $(cat "$PID_FILE"), sessions: $ACTIVE_SESSIONS)"
+echo "Discord Rich Presence started (PID: $(cat "$PID_FILE" 2>/dev/null || echo "unknown"), sessions: $ACTIVE_SESSIONS)"
