@@ -9,6 +9,7 @@
 - **Language**: Go 1.25
 - **Key Dependencies**:
   - `github.com/fsnotify/fsnotify` - Cross-platform file watching
+  - `github.com/Microsoft/go-winio` - Windows named pipe support (Discord IPC)
 
 ## Project Structure
 
@@ -16,7 +17,9 @@
 cc-discord-presence/
 ├── main.go               # Main entry - session tracking, data parsing, presence updates
 ├── discord/
-│   └── client.go         # Minimal Discord IPC implementation (~200 lines)
+│   ├── client.go         # Discord IPC client, Conn interface, presence logic
+│   ├── conn_unix.go      # Unix socket connection (macOS/Linux)
+│   └── conn_windows.go   # Named pipe connection (Windows, uses go-winio)
 ├── scripts/
 │   ├── build.sh          # Cross-compile binaries for all platforms
 │   ├── start.sh          # Plugin hook: starts daemon on SessionStart
@@ -54,6 +57,10 @@ cc-discord-presence/
 - **SessionStart**: Launches daemon via `scripts/start.sh`
 - **SessionEnd**: Stops daemon via `scripts/stop.sh`
 - Uses PID file at `~/.claude/discord-presence.pid`
+
+### Session Tracking (Platform-specific)
+- **macOS/Linux**: PID-based tracking via files in `~/.claude/discord-presence-sessions/`
+- **Windows**: Refcount-based tracking via `~/.claude/discord-presence.refcount` (PPID unreliable on Windows)
 
 ### Model Pricing (Update when new models release)
 Located at top of `main.go` in `modelPricing` and `modelDisplayNames` maps.

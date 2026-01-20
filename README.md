@@ -10,11 +10,12 @@ Show your Claude Code session on Discord! Display your current project, git bran
 | macOS (Intel) | ⚠️ Untested |
 | Linux (x64) | ⚠️ Untested |
 | Linux (ARM64) | ⚠️ Untested |
-| Windows (x64) | ⚠️ Untested |
+| Windows (x64) | ✅ Tested |
+| Windows (ARM64) | ⚠️ Untested |
 
-> **Note**: Only macOS Apple Silicon has been tested. macOS Intel and Linux should work in theory but haven't been verified. Please [report problems](https://github.com/tsanva/cc-discord-presence/issues).
+> **Note**: macOS Intel and Linux should work but haven't been verified. Please [report problems](https://github.com/tsanva/cc-discord-presence/issues).
 >
-> **Windows users**: The plugin hooks use bash scripts. You'll need Git Bash or run the PowerShell scripts manually (`scripts/start.ps1` and `scripts/stop.ps1`). Note: WSL won't work as Discord runs on the Windows host.
+> **Windows users**: Requires [Git Bash](https://git-scm.com/downloads) (included with Git for Windows) for automatic plugin hooks. Alternatively, run the PowerShell scripts manually (`scripts/start.ps1` and `scripts/stop.ps1`). WSL won't work as Discord runs on the Windows host.
 
 ## Features
 
@@ -207,4 +208,5 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 
 - [Anthropic](https://anthropic.com) for Claude
 - [fsnotify](https://github.com/fsnotify/fsnotify) for file watching
+- [go-winio](https://github.com/Microsoft/go-winio) for Windows named pipe support
 - The Claude Code community
