@@ -78,7 +78,15 @@ Located at top of `main.go` in `modelPricing` and `modelDisplayNames` maps.
 go build -o cc-discord-presence .   # Build binary
 go run .                             # Run directly
 ./cc-discord-presence                # Run built binary
+go test -v ./...                     # Run all tests
 ```
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines. Key points:
+- Run `go test -v ./...` before submitting PRs
+- Update CHANGELOG.md with your changes
+- Contributors are credited in release notes
 
 ## Configuration
 

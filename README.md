@@ -202,7 +202,12 @@ MIT License - see [LICENSE](LICENSE) for details.
 
 ## Contributing
 
-Contributions are welcome! Please feel free to submit a Pull Request.
+Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+
+**Before submitting a PR**, make sure to run the test suite:
+```bash
+go test -v ./...
+```
 
 ## Acknowledgments
 
