@@ -20,7 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Contributors
 - pedro ([@8bury](https://github.com/8bury)) - Windows support
-- Claude ([@anthropics](https://github.com/anthropics)) - Test suite
+- Claude ([@claude](https://github.com/claude)) - Test suite
 
 ## [1.0.2] - 2025-12-31
 
