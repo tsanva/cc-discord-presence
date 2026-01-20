@@ -10,7 +10,7 @@ $PidFile = Join-Path $ClaudeDir "discord-presence.pid"
 $LogFile = Join-Path $ClaudeDir "discord-presence.log"
 $RefcountFile = Join-Path $ClaudeDir "discord-presence.refcount"
 $Repo = "tsanva/cc-discord-presence"
-$Version = "v1.0.2"
+$Version = "v1.0.3"
 
 # Ensure directories exist
 New-Item -ItemType Directory -Path $ClaudeDir -Force | Out-Null

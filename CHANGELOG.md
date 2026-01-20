@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.3] - 2026-01-20
+
+### Added
+- Windows support with native named pipe IPC ([@8bury](https://github.com/8bury)) [#2](https://github.com/tsanva/cc-discord-presence/pull/2)
+  - PowerShell start script (`start.ps1`)
+  - Windows binary cross-compilation
+  - go-winio for named pipe communication
+- Comprehensive test suite for both main package and discord client
+  - `main_test.go`: Tests for calculateCost, formatModelName, formatNumber, readStatusLineData, parseJSONLSession, path decoding, findMostRecentJSONL
+  - `discord/client_test.go`: Tests for IPC protocol, SetActivity, send/receive, frame format verification
+
+### Contributors
+- pedro ([@8bury](https://github.com/8bury)) - Windows support
+- Claude ([@anthropics](https://github.com/anthropics)) - Test suite
+
 ## [1.0.2] - 2025-12-31
 
 ### Fixed
@@ -33,7 +48,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Automatic binary download on first run
 - GitHub Actions workflow for automated releases
 
-[Unreleased]: https://github.com/tsanva/cc-discord-presence/compare/v1.0.2...HEAD
+[Unreleased]: https://github.com/tsanva/cc-discord-presence/compare/v1.0.3...HEAD
+[1.0.3]: https://github.com/tsanva/cc-discord-presence/compare/v1.0.2...v1.0.3
 [1.0.2]: https://github.com/tsanva/cc-discord-presence/compare/v1.0.1...v1.0.2
 [1.0.1]: https://github.com/tsanva/cc-discord-presence/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/tsanva/cc-discord-presence/releases/tag/v1.0.0
