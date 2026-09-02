@@ -10,7 +10,6 @@ BIN_DIR="$CLAUDE_DIR/bin"
 PID_FILE="$CLAUDE_DIR/discord-presence.pid"
 LOG_FILE="$CLAUDE_DIR/discord-presence.log"
 SESSIONS_DIR="$CLAUDE_DIR/discord-presence-sessions"
-REFCOUNT_FILE="$CLAUDE_DIR/discord-presence.refcount"
 REPO="tsanva/cc-discord-presence"
 VERSION="v1.0.3"
 
@@ -34,27 +33,39 @@ process_exists() {
 # Ensure directories exist
 mkdir -p "$CLAUDE_DIR" "$BIN_DIR" "$SESSIONS_DIR"
 
-# Session tracking: Windows uses refcount (PPID unreliable), Unix uses PID files
+# Migration: drop the old Windows refcount file, replaced by PID-based tracking below
+rm -f "$CLAUDE_DIR/discord-presence.refcount"
+
+# Session tracking: register this session by PID and re-derive the active count
+# from actual process liveness on every call (self-healing). A plain counter
+# (the old Windows-only approach) can only be trusted if every session also
+# runs its matching decrement -- but that never happens for a session that ends
+# abruptly (terminal window closed, process killed, crash), so the count only
+# ever grows and the daemon never stops. Checking liveness instead means a
+# session that's gone is detected and pruned the next time anyone calls in,
+# with no dependency on a clean shutdown ever having happened.
 if $IS_WINDOWS; then
-    CURRENT_COUNT=$(cat "$REFCOUNT_FILE" 2>/dev/null || echo "0")
-    ACTIVE_SESSIONS=$((CURRENT_COUNT + 1))
-    echo "$ACTIVE_SESSIONS" > "$REFCOUNT_FILE"
+    # PPID here is the short-lived shell Claude Code spawns to run this hook,
+    # not the claude.exe session itself, so it would already look "dead" by the
+    # time stop.sh runs. CLAUDE_PID (exported by Claude Code to every hook) is
+    # the actual session process and stays valid for the session's lifetime.
+    SESSION_PID="${CLAUDE_PID:-$PPID}"
 else
     SESSION_PID="${PPID:-$$}"
-    echo "$SESSION_PID" > "$SESSIONS_DIR/$SESSION_PID"
-
-    # Count active sessions and clean up orphans
-    ACTIVE_SESSIONS=0
-    for session_file in "$SESSIONS_DIR"/*; do
-        [[ -f "$session_file" ]] || continue
-        pid=$(basename "$session_file")
-        if process_exists "$pid"; then
-            ACTIVE_SESSIONS=$((ACTIVE_SESSIONS + 1))
-        else
-            rm -f "$session_file"
-        fi
-    done
 fi
+echo "$SESSION_PID" > "$SESSIONS_DIR/$SESSION_PID"
+
+# Count active sessions and clean up orphans
+ACTIVE_SESSIONS=0
+for session_file in "$SESSIONS_DIR"/*; do
+    [[ -f "$session_file" ]] || continue
+    pid=$(basename "$session_file")
+    if process_exists "$pid"; then
+        ACTIVE_SESSIONS=$((ACTIVE_SESSIONS + 1))
+    else
+        rm -f "$session_file"
+    fi
+done
 
 # If daemon is already running, just exit
 if [[ -f "$PID_FILE" ]]; then

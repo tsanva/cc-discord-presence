@@ -4,23 +4,30 @@
 # Configuration
 $ClaudeDir = Join-Path $env:USERPROFILE ".claude"
 $PidFile = Join-Path $ClaudeDir "discord-presence.pid"
-$RefcountFile = Join-Path $ClaudeDir "discord-presence.refcount"
+$SessionsDir = Join-Path $ClaudeDir "discord-presence-sessions-win"
 
-# Session tracking: Use refcount (PID-based tracking is unreliable on Windows)
-$CurrentCount = 1
-if (Test-Path $RefcountFile) {
-    $CurrentCount = [int](Get-Content $RefcountFile -ErrorAction SilentlyContinue)
+# Session tracking: mirror start.ps1 -- drop this session's PID marker, then
+# recount by actual liveness (self-healing) rather than trusting a counter.
+$SessionPid = $env:CLAUDE_PID
+if (-not $SessionPid) { $SessionPid = $PID }
+Remove-Item (Join-Path $SessionsDir $SessionPid) -Force -ErrorAction SilentlyContinue
+
+$ActiveSessions = 0
+Get-ChildItem -Path $SessionsDir -File -ErrorAction SilentlyContinue | ForEach-Object {
+    $sessionProcess = Get-Process -Id $_.Name -ErrorAction SilentlyContinue
+    if ($sessionProcess) {
+        $ActiveSessions++
+    } else {
+        Remove-Item $_.FullName -Force -ErrorAction SilentlyContinue
+    }
 }
-$ActiveSessions = [Math]::Max(0, $CurrentCount - 1)
 
 if ($ActiveSessions -gt 0) {
-    $ActiveSessions | Out-File -FilePath $RefcountFile -Encoding ASCII -NoNewline
     Write-Host "Discord Rich Presence still in use by $ActiveSessions session(s)"
     exit 0
 }
 
-# No more sessions, clean up refcount file
-Remove-Item $RefcountFile -Force -ErrorAction SilentlyContinue
+Remove-Item $SessionsDir -Recurse -Force -ErrorAction SilentlyContinue
 
 # Stop the daemon
 if (Test-Path $PidFile) {

@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Windows: Discord presence never disappeared after closing a session abruptly (closing the terminal window, killing the process, a crash) instead of exiting cleanly
+  - The Windows session counter (`discord-presence.refcount`) only ever incremented on `SessionStart` and decremented on a clean `SessionEnd`; a session that ended abruptly skipped the decrement, so the count only grew and the daemon never stopped
+  - Replaced it with the same self-healing, PID-based tracking Unix already used: each session registers a marker file, and every `start`/`stop` call recounts by actually checking whether each marker's PID is still alive, pruning dead ones automatically
+  - Applies to both the Git Bash hooks (`start.sh`/`stop.sh`) and the standalone `start.ps1`/`stop.ps1` scripts
+
+### Contributors
+- Joseph Anderson ([@JosephAnderson234](https://github.com/JosephAnderson234)) - Windows session-tracking fix
+
 ## [1.0.3] - 2026-01-20
 
 ### Added
