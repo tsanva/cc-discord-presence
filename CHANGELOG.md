@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.5] - 2026-10-04
+
+### Changed
+- The hooks module is now the primary data source in every host that loads it (terminal, desktop app, IDE extensions), not only the desktop app
+  - It writes `~/.claude/discord-presence-module.json`; the daemon reads it first, then the statusline file, then JSONL
+  - Updates on session start, prompt submit, each tool call and each response; clears its data on session end
+  - The statusline setup is now only needed on Claude Code versions without hooks modules
+- Tokens shown are the context size (the last request's input, cached tokens included) in every data source, instead of input + output
+- The daemon only pushes to Discord when the displayed text changes
+
+### Fixed
+- Start scripts re-download the daemon when the installed binary is from another release; previously a binary was only downloaded once, so updates to the daemon never reached existing installs
+
 ## [1.0.4] - 2026-10-04
 
 ### Added

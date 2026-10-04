@@ -23,7 +23,7 @@ Show your Claude Code session on Discord! Display your current project, git bran
 - **Project Name** - Displays the current project you're working on
 - **Git Branch** - Shows your current git branch
 - **Model Name** - Shows which Claude model you're using (Opus 4.5, Sonnet 4.5, Haiku 4.5)
-- **Total Tokens** - Token usage counter (input + output)
+- **Context Size** - Tokens in Claude's context window right now (cached tokens included)
 - **Total Cost** - Real-time cost tracking for your session
 
 ## Installation
@@ -54,18 +54,24 @@ go build -o cc-discord-presence .
 
 ## How It Works
 
-The app reads session data from Claude Code in two ways. In the Claude desktop app, which has no statusline, the plugin's hooks module (`hooks/register.ts`) writes the same data the statusline integration does, so no setup is needed there.
+The app reads session data from three sources, using the first one available:
 
-### 1. JSONL Fallback (Zero Config)
+### 1. Hooks Module (Zero Config, Most Accurate)
 
-By default, the app parses Claude Code's session files from `~/.claude/projects/`. This works out of the box with no configuration needed.
+The plugin ships a Claude Code hooks module (`hooks/register.ts`) that writes the session's project, model, context size and cost to `~/.claude/discord-presence-module.json` using Claude Code's own figures. It runs in the terminal, the Claude desktop app and IDE extensions on Claude Code versions with hooks module support, and needs no setup. It updates when a session starts, when you send a prompt, after each tool call, after each response, and clears its data when the session ends.
 
-### 2. Statusline Integration (More Accurate)
+### 2. Statusline Integration (Older Claude Code Versions)
 
-For the most accurate token/cost data, you can configure the statusline integration. This uses Claude Code's own calculations instead of estimating from JSONL.
+On Claude Code versions without hooks modules, you can configure the statusline integration for the same accuracy. On current versions it isn't needed.
+
+### 3. JSONL Fallback
+
+As a last resort, the app parses Claude Code's session files from `~/.claude/projects/`. Cost is estimated from the model pricing table.
 
 <a name="statusline-setup"></a>
-#### Statusline Setup
+#### Statusline Setup (Optional)
+
+Only needed on Claude Code versions without hooks module support.
 
 **Automatic Setup (Recommended)**:
 
@@ -107,8 +113,9 @@ cat ~/.claude/discord-presence.log
 ```
 
 You'll see one of:
-- `✓ Found active session: project-name (using statusline data)` - Best accuracy
-- `✓ Found active session: project-name (using JSONL fallback)` - Working, but consider setting up statusline
+- `✓ Found active session: project-name (using hooks module)` - Best accuracy, no setup
+- `✓ Found active session: project-name (using statusline data)` - Same accuracy, for older Claude Code versions
+- `✓ Found active session: project-name (using JSONL fallback)` - Working, but cost is estimated; update Claude Code or set up the statusline
 
 ## Discord Presence Display
 

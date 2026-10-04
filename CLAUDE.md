@@ -26,6 +26,9 @@ cc-discord-presence/
 │   ├── stop.sh           # Plugin hook: stops daemon on SessionEnd
 │   ├── statusline-wrapper.sh  # Wrapper script (copied to ~/.claude/)
 │   └── setup-statusline.sh    # One-time setup for statusline integration
+├── hooks/
+│   ├── hooks.json        # Registers the hooks module (empty "hooks" keeps older versions loading)
+│   └── register.ts       # Hooks module: writes discord-presence-module.json
 ├── .claude-plugin/
 │   └── plugin.json       # Plugin manifest with SessionStart/SessionEnd hooks
 ├── go.mod
@@ -42,12 +45,16 @@ cc-discord-presence/
 
 ### Session Data Sources (Priority Order)
 
-1. **Statusline Data** (`~/.claude/discord-presence-data.json`)
-   - Most accurate - uses Claude Code's own calculations
-   - Requires user to configure statusline wrapper
-   - Provides: model display name, cost, tokens directly from Claude
+1. **Hooks Module** (`~/.claude/discord-presence-module.json`)
+   - Most accurate - Claude Code's own figures via the hooks module API
+   - Zero configuration; runs in every host that loads hooks modules (terminal, desktop app, IDEs)
+   - Same JSON shape as the statusline data; blanked to `{}` on session end
 
-2. **JSONL Fallback** (`~/.claude/projects/<encoded-path>/*.jsonl`)
+2. **Statusline Data** (`~/.claude/discord-presence-data.json`)
+   - Same accuracy, for Claude Code versions without hooks modules
+   - Requires user to configure statusline wrapper
+
+3. **JSONL Fallback** (`~/.claude/projects/<encoded-path>/*.jsonl`)
    - Zero configuration needed
    - Parses session transcript files
    - Calculates cost based on model pricing table
@@ -98,7 +105,10 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines. Key points:
 - Polls every 3 seconds + uses file watcher
 - Discord must be running for RPC to connect
 - Graceful shutdown on SIGINT/SIGTERM
-- Shows nudge message when using JSONL fallback encouraging statusline setup
+- Shows nudge message when using JSONL fallback
+- Tokens shown are context size (the last request's input, cached tokens included), not a session total
+- Only pushes to Discord when the displayed text changes
+- start.sh/start.ps1 re-download the binary when `<binary>.version` doesn't match `VERSION`
 
 ## Releasing
 
@@ -108,21 +118,12 @@ Binaries are downloaded from GitHub Releases on first run. To create a new relea
    - `scripts/start.sh` - `VERSION="vX.X.X"`
    - `scripts/start.ps1` - `$Version = "vX.X.X"`
    - `.claude-plugin/plugin.json` - `"version": "X.X.X"` (no 'v' prefix)
+   - `.claude-plugin/marketplace.json` - `"version": "X.X.X"`
 
-2. **Build all binaries:**
+2. **Merge to main, then tag right away** (until the release exists, start scripts on main point at a missing binary):
    ```bash
-   ./scripts/build.sh
+   git tag -a vX.X.X -m "vX.X.X"
+   git push origin vX.X.X
    ```
 
-3. **Commit and tag:**
-   ```bash
-   git add scripts/start.sh scripts/start.ps1 .claude-plugin/plugin.json
-   git commit -m "Bump version to vX.X.X"
-   git tag vX.X.X
-   git push origin main --tags
-   ```
-
-4. **Create GitHub release:**
-   ```bash
-   gh release create vX.X.X bin/* --title "vX.X.X" --generate-notes
-   ```
+3. **The Release workflow** (`.github/workflows/release.yml`) builds all binaries and creates the GitHub release with generated notes. Replace the notes with hand-written ones afterwards (`gh release edit vX.X.X --notes-file ...`).

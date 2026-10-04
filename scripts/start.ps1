@@ -10,7 +10,7 @@ $PidFile = Join-Path $ClaudeDir "discord-presence.pid"
 $LogFile = Join-Path $ClaudeDir "discord-presence.log"
 $RefcountFile = Join-Path $ClaudeDir "discord-presence.refcount"
 $Repo = "tsanva/cc-discord-presence"
-$Version = "v1.0.4"
+$Version = "v1.0.5"
 
 # Ensure directories exist
 New-Item -ItemType Directory -Path $ClaudeDir -Force | Out-Null
@@ -39,18 +39,30 @@ if (Test-Path $PidFile) {
 $BinaryName = "cc-discord-presence-windows-amd64.exe"
 $Binary = Join-Path $BinDir $BinaryName
 
-# Download binary if not present
-if (-not (Test-Path $Binary)) {
-    Write-Host "Downloading cc-discord-presence for windows-amd64..."
+# Download the binary when it is missing or from another release. The
+# version file beside it records which release it came from; installs from
+# before it existed have none and update once.
+$VersionFile = "$Binary.version"
+$InstalledVersion = if (Test-Path $VersionFile) { (Get-Content $VersionFile -Raw).Trim() } else { "" }
+if (-not (Test-Path $Binary) -or $InstalledVersion -ne $Version) {
+    Write-Host "Downloading cc-discord-presence $Version for windows-amd64..."
 
     $DownloadUrl = "https://github.com/$Repo/releases/download/$Version/$BinaryName"
+    $TmpBinary = "$Binary.download"
 
     try {
-        Invoke-WebRequest -Uri $DownloadUrl -OutFile $Binary -UseBasicParsing
+        Invoke-WebRequest -Uri $DownloadUrl -OutFile $TmpBinary -UseBasicParsing
+        Move-Item -Path $TmpBinary -Destination $Binary -Force
+        $Version | Out-File -FilePath $VersionFile -Encoding ASCII -NoNewline
         Write-Host "Downloaded successfully!"
     } catch {
-        Write-Error "Failed to download binary: $_"
-        exit 1
+        # Keep a binary from an earlier release rather than none
+        Remove-Item -Path $TmpBinary -ErrorAction SilentlyContinue
+        if (-not (Test-Path $Binary)) {
+            Write-Error "Failed to download binary: $_"
+            exit 1
+        }
+        Write-Warning "Download failed; using the existing binary: $_"
     }
 }
 

@@ -43,7 +43,8 @@ var modelDisplayNames = map[string]string{
 	"claude-haiku-4-5-20241022":  "Haiku 4.5",
 }
 
-// StatusLineData matches Claude Code's statusline JSON structure
+// StatusLineData matches Claude Code's statusline JSON structure. The hooks
+// module (hooks/register.ts) writes the same shape to its own file.
 type StatusLineData struct {
 	SessionID string `json:"session_id"`
 	Cwd       string `json:"cwd"`
@@ -85,8 +86,10 @@ type JSONLMessage struct {
 	Message   struct {
 		Model string `json:"model"`
 		Usage struct {
-			InputTokens  int64 `json:"input_tokens"`
-			OutputTokens int64 `json:"output_tokens"`
+			InputTokens              int64 `json:"input_tokens"`
+			OutputTokens             int64 `json:"output_tokens"`
+			CacheCreationInputTokens int64 `json:"cache_creation_input_tokens"`
+			CacheReadInputTokens     int64 `json:"cache_read_input_tokens"`
 		} `json:"usage"`
 	} `json:"message"`
 }
@@ -95,10 +98,19 @@ var (
 	claudeDir        string
 	projectsDir      string
 	dataFilePath     string
+	moduleFilePath   string
 	sessionStartTime = time.Now()
 	discordClient    *discord.Client
-	usingFallback    bool
+	currentSource    string
 	nudgeShown       bool
+	lastPresence     string
+)
+
+// Where session data came from, in the order readSessionData tries them.
+const (
+	sourceModule     = "hooks module"
+	sourceStatusLine = "statusline data"
+	sourceJSONL      = "JSONL fallback"
 )
 
 func init() {
@@ -110,6 +122,7 @@ func init() {
 	claudeDir = filepath.Join(home, ".claude")
 	projectsDir = filepath.Join(claudeDir, "projects")
 	dataFilePath = filepath.Join(claudeDir, "discord-presence-data.json")
+	moduleFilePath = filepath.Join(claudeDir, "discord-presence-module.json")
 }
 
 func main() {
@@ -143,11 +156,7 @@ func main() {
 	// Try initial read and show data source
 	if session := readSessionData(); session != nil {
 		updatePresence(session)
-		if usingFallback {
-			fmt.Printf("✓ Found active session: %s (using JSONL fallback)\n", session.ProjectName)
-		} else {
-			fmt.Printf("✓ Found active session: %s (using statusline data)\n", session.ProjectName)
-		}
+		fmt.Printf("✓ Found active session: %s (using %s)\n", session.ProjectName, currentSource)
 	} else {
 		fmt.Println("⏳ Waiting for Claude Code session...")
 	}
@@ -159,7 +168,17 @@ func main() {
 }
 
 func readStatusLineData() *SessionData {
-	data, err := os.ReadFile(dataFilePath)
+	return readPresenceFile(dataFilePath)
+}
+
+// readModuleData reads the file the plugin's hooks module writes. The module
+// blanks it to "{}" when its session ends, which reads as no data.
+func readModuleData() *SessionData {
+	return readPresenceFile(moduleFilePath)
+}
+
+func readPresenceFile(path string) *SessionData {
+	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil
 	}
@@ -188,7 +207,8 @@ func readStatusLineData() *SessionData {
 		ProjectPath: projectPath,
 		GitBranch:   getGitBranch(projectPath),
 		ModelName:   statusLine.Model.DisplayName,
-		TotalTokens: statusLine.ContextWindow.TotalInputTokens + statusLine.ContextWindow.TotalOutputTokens,
+		// Context size: the last request's input, cached tokens included.
+		TotalTokens: statusLine.ContextWindow.TotalInputTokens,
 		TotalCost:   statusLine.Cost.TotalCostUSD,
 		StartTime:   sessionStartTime,
 	}
@@ -303,6 +323,7 @@ func parseJSONLSession(jsonlPath, _ string) *SessionData {
 	var (
 		totalInputTokens  int64
 		totalOutputTokens int64
+		contextTokens     int64
 		lastModel         string
 		projectPath       string
 	)
@@ -326,8 +347,11 @@ func parseJSONLSession(jsonlPath, _ string) *SessionData {
 		// Only process assistant messages with usage data
 		if msg.Type == "assistant" && msg.Message.Model != "" {
 			lastModel = msg.Message.Model
-			totalInputTokens += msg.Message.Usage.InputTokens
-			totalOutputTokens += msg.Message.Usage.OutputTokens
+			usage := msg.Message.Usage
+			totalInputTokens += usage.InputTokens
+			totalOutputTokens += usage.OutputTokens
+			// Context size: the latest request's input, cached tokens included
+			contextTokens = usage.InputTokens + usage.CacheCreationInputTokens + usage.CacheReadInputTokens
 		}
 	}
 
@@ -353,7 +377,7 @@ func parseJSONLSession(jsonlPath, _ string) *SessionData {
 		ProjectPath: projectPath,
 		GitBranch:   getGitBranch(projectPath),
 		ModelName:   modelName,
-		TotalTokens: totalInputTokens + totalOutputTokens,
+		TotalTokens: contextTokens,
 		TotalCost:   totalCost,
 		StartTime:   sessionStartTime,
 	}
@@ -395,43 +419,67 @@ func formatModelName(modelID string) string {
 
 // readSessionData tries statusline data first, then falls back to JSONL parsing
 func readSessionData() *SessionData {
-	// First try statusline data (most accurate)
+	// The hooks module first: it runs in every host that loads it, the
+	// desktop app included. Then the statusline wrapper, for Claude Code
+	// versions without hooks modules. Then JSONL parsing as a last resort.
+	if data := readModuleData(); data != nil {
+		setSource(sourceModule)
+		return data
+	}
 	if data := readStatusLineData(); data != nil {
-		if usingFallback {
-			usingFallback = false
-			fmt.Println("📊 Now using statusline data (more accurate)")
-		}
+		setSource(sourceStatusLine)
 		return data
 	}
 
-	// Fall back to JSONL parsing
 	jsonlPath, projectPath, err := findMostRecentJSONL()
 	if err != nil {
 		return nil
 	}
 
-	if !usingFallback && !nudgeShown {
-		usingFallback = true
+	setSource(sourceJSONL)
+	if !nudgeShown {
 		nudgeShown = true
-		fmt.Println("\n💡 Tip: For more accurate token/cost data, configure the statusline wrapper.")
+		fmt.Println("\n💡 Tip: For accurate token/cost data, update Claude Code (the plugin's hooks module")
+		fmt.Println("   needs a recent version) or configure the statusline wrapper.")
 		fmt.Println("   See: https://github.com/tsanva/cc-discord-presence#statusline-setup")
 	}
 
 	return parseJSONLSession(jsonlPath, projectPath)
 }
 
-func updatePresence(session *SessionData) {
-	// Build details line with prefix
-	details := fmt.Sprintf("Working on: %s", session.ProjectName)
+// setSource logs when the data source changes after startup.
+func setSource(source string) {
+	if currentSource != "" && currentSource != source {
+		fmt.Printf("📊 Now using %s\n", source)
+	}
+	currentSource = source
+}
+
+// presenceText builds the two activity lines Discord shows.
+func presenceText(session *SessionData) (details, state string) {
+	details = fmt.Sprintf("Working on: %s", session.ProjectName)
 	if session.GitBranch != "" {
 		details = fmt.Sprintf("Working on: %s (%s)", session.ProjectName, session.GitBranch)
 	}
 
-	// Build state line: model | tokens | cost
-	state := fmt.Sprintf("%s | %s tokens | $%.4f",
+	// model | context size | cost
+	state = fmt.Sprintf("%s | %s tokens | $%.4f",
 		session.ModelName,
 		formatNumber(session.TotalTokens),
 		session.TotalCost)
+	return details, state
+}
+
+func updatePresence(session *SessionData) {
+	details, state := presenceText(session)
+
+	// The data files change often (the hooks module writes after every tool
+	// call) and the poll runs every few seconds; only send what Discord
+	// would show differently.
+	key := details + "\n" + state + "\n" + session.StartTime.String()
+	if key == lastPresence {
+		return
+	}
 
 	if err := discordClient.SetActivity(discord.Activity{
 		Details:   details,
@@ -440,7 +488,9 @@ func updatePresence(session *SessionData) {
 		StartTime: &session.StartTime,
 	}); err != nil {
 		fmt.Fprintf(os.Stderr, "Error updating presence: %v\n", err)
+		return
 	}
+	lastPresence = key
 }
 
 func formatNumber(n int64) string {
@@ -461,7 +511,7 @@ func watchForChanges() {
 	}
 	defer watcher.Close()
 
-	// Watch both the main claude dir (for statusline data) and projects dir (for JSONL fallback)
+	// Watch the main claude dir (module and statusline data files)
 	if err := watcher.Add(claudeDir); err != nil {
 		fmt.Println("Using polling mode for session tracking")
 		pollForChanges()
@@ -478,8 +528,8 @@ func watchForChanges() {
 			if !ok {
 				return
 			}
-			// Respond to statusline data file changes
-			if filepath.Base(event.Name) == "discord-presence-data.json" {
+			// Respond to module and statusline data file changes
+			if name := filepath.Base(event.Name); name == filepath.Base(moduleFilePath) || name == filepath.Base(dataFilePath) {
 				if session := readSessionData(); session != nil {
 					updatePresence(session)
 				}

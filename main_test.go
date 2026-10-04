@@ -196,6 +196,7 @@ func TestReadStatusLineData(t *testing.T) {
 		wantNil     bool
 		wantProject string
 		wantModel   string
+		wantTokens  int64
 	}{
 		{
 			name: "Valid statusline data",
@@ -210,6 +211,7 @@ func TestReadStatusLineData(t *testing.T) {
 			wantNil:     false,
 			wantProject: "myproject",
 			wantModel:   "Opus 4.5",
+			wantTokens:  10000, // context size only, output excluded
 		},
 		{
 			name: "Missing session_id - should return nil",
@@ -269,6 +271,9 @@ func TestReadStatusLineData(t *testing.T) {
 			if got.ModelName != tt.wantModel {
 				t.Errorf("ModelName = %q, want %q", got.ModelName, tt.wantModel)
 			}
+			if got.TotalTokens != tt.wantTokens {
+				t.Errorf("TotalTokens = %d, want %d", got.TotalTokens, tt.wantTokens)
+			}
 		})
 	}
 
@@ -309,9 +314,18 @@ func TestParseJSONLSession(t *testing.T) {
 {"type":"user"}
 {"type":"assistant","message":{"model":"claude-sonnet-4-20250514","usage":{"input_tokens":2000,"output_tokens":1000}}}`,
 			wantNil:     false,
-			wantTokens:  4500, // 1000+500+2000+1000
+			wantTokens:  2000, // last request's input: context size
 			wantModel:   "Sonnet 4",
 			wantProject: "project",
+		},
+		{
+			name: "Cached tokens count toward context size",
+			content: `{"type":"user","cwd":"/Users/test/cached"}
+{"type":"assistant","message":{"model":"claude-sonnet-4-20250514","usage":{"input_tokens":2,"cache_creation_input_tokens":446,"cache_read_input_tokens":53664,"output_tokens":294}}}`,
+			wantNil:     false,
+			wantTokens:  54112, // 2+446+53664
+			wantModel:   "Sonnet 4",
+			wantProject: "cached",
 		},
 		{
 			name:    "Empty file",
@@ -330,7 +344,7 @@ func TestParseJSONLSession(t *testing.T) {
 invalid json line
 {"type":"assistant","message":{"model":"claude-haiku-4-5-20241022","usage":{"input_tokens":500,"output_tokens":100}}}`,
 			wantNil:     false,
-			wantTokens:  600,
+			wantTokens:  500,
 			wantModel:   "Haiku 4.5",
 			wantProject: "myapp",
 		},
@@ -340,7 +354,7 @@ invalid json line
 {"type":"assistant","message":{"model":"claude-haiku-4-5-20241022","usage":{"input_tokens":100,"output_tokens":50}}}
 {"type":"assistant","message":{"model":"claude-opus-4-5-20251101","usage":{"input_tokens":200,"output_tokens":100}}}`,
 			wantNil:     false,
-			wantTokens:  450,
+			wantTokens:  200,
 			wantModel:   "Opus 4.5", // Last model used
 			wantProject: "multimodel",
 		},
@@ -559,5 +573,99 @@ func TestModelPricingConsistency(t *testing.T) {
 		if _, ok := modelPricing[modelID]; !ok {
 			t.Errorf("Model %q has display name but no pricing", modelID)
 		}
+	}
+}
+
+// TestReadSessionDataPriority tests that the hooks module's file wins over the
+// statusline file, and that a blanked module file falls back to it.
+func TestReadSessionDataPriority(t *testing.T) {
+	origData, origModule, origProjects := dataFilePath, moduleFilePath, projectsDir
+	origSource, origNudge := currentSource, nudgeShown
+	defer func() {
+		dataFilePath, moduleFilePath, projectsDir = origData, origModule, origProjects
+		currentSource, nudgeShown = origSource, origNudge
+	}()
+
+	tmpDir := t.TempDir()
+	dataFilePath = filepath.Join(tmpDir, "discord-presence-data.json")
+	moduleFilePath = filepath.Join(tmpDir, "discord-presence-module.json")
+	projectsDir = filepath.Join(tmpDir, "projects") // empty: no JSONL fallback
+	nudgeShown = true
+
+	presence := func(project string) string {
+		return `{"session_id":"s-` + project + `","cwd":"/work/` + project + `",` +
+			`"model":{"id":"claude-opus-5-5","display_name":"Opus 5.5"},` +
+			`"workspace":{"current_dir":"/work/` + project + `","project_dir":"/work/` + project + `"},` +
+			`"context_window":{"total_input_tokens":1234}}`
+	}
+	write := func(path, content string) {
+		if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+			t.Fatalf("write %s: %v", path, err)
+		}
+	}
+
+	tests := []struct {
+		name        string
+		module      string // "" means no file
+		statusLine  string
+		wantProject string
+		wantSource  string
+	}{
+		{"module wins over statusline", presence("from-module"), presence("from-statusline"), "from-module", sourceModule},
+		{"blanked module falls back", "{}", presence("from-statusline"), "from-statusline", sourceStatusLine},
+		{"missing module falls back", "", presence("from-statusline"), "from-statusline", sourceStatusLine},
+		{"module alone", presence("from-module"), "", "from-module", sourceModule},
+		{"neither", "", "", "", ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			os.Remove(moduleFilePath)
+			os.Remove(dataFilePath)
+			if tt.module != "" {
+				write(moduleFilePath, tt.module)
+			}
+			if tt.statusLine != "" {
+				write(dataFilePath, tt.statusLine)
+			}
+			currentSource = ""
+
+			got := readSessionData()
+			if tt.wantProject == "" {
+				if got != nil {
+					t.Fatalf("readSessionData() = %+v, want nil", got)
+				}
+				return
+			}
+			if got == nil {
+				t.Fatal("readSessionData() = nil, want non-nil")
+			}
+			if got.ProjectName != tt.wantProject {
+				t.Errorf("ProjectName = %q, want %q", got.ProjectName, tt.wantProject)
+			}
+			if currentSource != tt.wantSource {
+				t.Errorf("currentSource = %q, want %q", currentSource, tt.wantSource)
+			}
+			if got.TotalTokens != 1234 {
+				t.Errorf("TotalTokens = %d, want 1234", got.TotalTokens)
+			}
+		})
+	}
+}
+
+// TestPresenceText tests the activity lines Discord shows.
+func TestPresenceText(t *testing.T) {
+	details, state := presenceText(&SessionData{
+		ProjectName: "kadens",
+		GitBranch:   "main",
+		ModelName:   "Opus 5.5",
+		TotalTokens: 54112,
+		TotalCost:   1.27,
+	})
+	if details != "Working on: kadens (main)" {
+		t.Errorf("details = %q", details)
+	}
+	if state != "Opus 5.5 | 54.1K tokens | $1.2700" {
+		t.Errorf("state = %q", state)
 	}
 }
