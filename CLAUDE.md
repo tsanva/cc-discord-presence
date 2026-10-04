@@ -112,18 +112,25 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines. Key points:
 
 ## Releasing
 
-Binaries are downloaded from GitHub Releases on first run. To create a new release:
+Binaries are downloaded from GitHub Releases by the start scripts, into `~/.claude/bin/` (outside the plugin folder, so `claude plugin update` never replaces them). The scripts re-download when `<binary>.version` doesn't match their version.
 
-1. **Update version** in these files:
+Users get a new plugin version from `main`, and the start scripts on `main` point at the new release, so the release must exist before `main` moves:
+
+1. **On a branch, update the version** in all four places, then open a PR:
    - `scripts/start.sh` - `VERSION="vX.X.X"`
    - `scripts/start.ps1` - `$Version = "vX.X.X"`
    - `.claude-plugin/plugin.json` - `"version": "X.X.X"` (no 'v' prefix)
    - `.claude-plugin/marketplace.json` - `"version": "X.X.X"`
 
-2. **Merge to main, then tag right away** (until the release exists, start scripts on main point at a missing binary):
+2. **Tag the PR's head commit** (rebased on current `main`) and push the tag:
    ```bash
-   git tag -a vX.X.X -m "vX.X.X"
-   git push origin vX.X.X
+   git tag -a vX.X.X -m "vX.X.X" && git push origin vX.X.X
+   ```
+   The Release workflow (`.github/workflows/release.yml`) checks that all four versions match the tag, runs the tests, builds all binaries and creates the GitHub release. If it fails, nothing has reached users: fix, delete the tag and release, retag.
+
+3. **After the release succeeds, fast-forward `main`** to the tagged commit (GitHub marks the PR merged):
+   ```bash
+   git push origin vX.X.X^{commit}:main
    ```
 
-3. **The Release workflow** (`.github/workflows/release.yml`) builds all binaries and creates the GitHub release with generated notes. Replace the notes with hand-written ones afterwards (`gh release edit vX.X.X --notes-file ...`).
+4. **Replace the generated release notes** with hand-written ones: `gh release edit vX.X.X --notes-file notes.md`
