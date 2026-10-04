@@ -18,7 +18,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The daemon only pushes to Discord when the displayed text changes
 
 ### Fixed
-- Start scripts re-download the daemon when the installed binary is from another release; previously a binary was only downloaded once, so updates to the daemon never reached existing installs
+- Start scripts re-download the daemon when the installed binary is from another release, and restart a running daemon from an older release; previously a binary was only downloaded once, so updates to the daemon never reached existing installs (`claude plugin update` replaces the plugin files, not the binary in `~/.claude/bin/`)
+
+### Upgrading from 1.0.4 or earlier
+- Update the plugin, then start a new Claude Code session: the start script replaces the old daemon. If Discord still shows stale data, delete `~/.claude/bin/cc-discord-presence-*` and start a new session.
 
 ## [1.0.4] - 2026-10-04
 

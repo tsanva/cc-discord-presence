@@ -56,15 +56,6 @@ else
     done
 fi
 
-# If daemon is already running, just exit
-if [[ -f "$PID_FILE" ]]; then
-    OLD_PID=$(cat "$PID_FILE")
-    if process_exists "$OLD_PID"; then
-        echo "Discord Rich Presence already running (PID: $OLD_PID, sessions: $ACTIVE_SESSIONS)"
-        exit 0
-    fi
-fi
-
 # Detect architecture
 ARCH=$(uname -m)
 case "$ARCH" in
@@ -77,11 +68,31 @@ if [[ "$OS" == "windows" ]]; then
     BINARY_NAME="${BINARY_NAME}.exe"
 fi
 BINARY="$BIN_DIR/$BINARY_NAME"
+VERSION_FILE="$BINARY.version"
+
+# If the daemon is already running, just exit, unless it runs a binary from
+# another release: then stop it so the current one is downloaded and started.
+# (claude plugin update replaces this script, never the binary.)
+if [[ -f "$PID_FILE" ]]; then
+    OLD_PID=$(cat "$PID_FILE")
+    if process_exists "$OLD_PID"; then
+        if [[ "$(cat "$VERSION_FILE" 2>/dev/null)" == "$VERSION" ]]; then
+            echo "Discord Rich Presence already running (PID: $OLD_PID, sessions: $ACTIVE_SESSIONS)"
+            exit 0
+        fi
+        echo "Updating the running daemon to ${VERSION}..."
+        if $IS_WINDOWS; then
+            taskkill //PID "$OLD_PID" //F > /dev/null 2>&1 || true
+        else
+            kill "$OLD_PID" 2>/dev/null || true
+        fi
+        sleep 1
+    fi
+fi
 
 # Download the binary when it is missing or from another release. The
 # version file beside it records which release it came from; installs from
 # before it existed have none and update once.
-VERSION_FILE="$BINARY.version"
 if [[ ! -f "$BINARY" || "$(cat "$VERSION_FILE" 2>/dev/null)" != "$VERSION" ]]; then
     echo "Downloading cc-discord-presence ${VERSION} for ${OS}-${ARCH}..."
 

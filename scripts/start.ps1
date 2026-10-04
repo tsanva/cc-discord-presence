@@ -24,26 +24,33 @@ if (Test-Path $RefcountFile) {
 $ActiveSessions = $CurrentCount + 1
 $ActiveSessions | Out-File -FilePath $RefcountFile -Encoding ASCII -NoNewline
 
-# If daemon is already running, just exit
+$BinaryName = "cc-discord-presence-windows-amd64.exe"
+$Binary = Join-Path $BinDir $BinaryName
+$VersionFile = "$Binary.version"
+$InstalledVersion = if (Test-Path $VersionFile) { (Get-Content $VersionFile -Raw).Trim() } else { "" }
+
+# If the daemon is already running, just exit, unless it runs a binary from
+# another release: then stop it so the current one is downloaded and started.
+# (claude plugin update replaces this script, never the binary.)
 if (Test-Path $PidFile) {
     $OldPid = Get-Content $PidFile -ErrorAction SilentlyContinue
     if ($OldPid) {
         $Process = Get-Process -Id $OldPid -ErrorAction SilentlyContinue
         if ($Process) {
-            Write-Host "Discord Rich Presence already running (PID: $OldPid, sessions: $ActiveSessions)"
-            exit 0
+            if ($InstalledVersion -eq $Version) {
+                Write-Host "Discord Rich Presence already running (PID: $OldPid, sessions: $ActiveSessions)"
+                exit 0
+            }
+            Write-Host "Updating the running daemon to $Version..."
+            Stop-Process -Id $OldPid -Force -ErrorAction SilentlyContinue
+            Start-Sleep -Seconds 1
         }
     }
 }
 
-$BinaryName = "cc-discord-presence-windows-amd64.exe"
-$Binary = Join-Path $BinDir $BinaryName
-
 # Download the binary when it is missing or from another release. The
 # version file beside it records which release it came from; installs from
 # before it existed have none and update once.
-$VersionFile = "$Binary.version"
-$InstalledVersion = if (Test-Path $VersionFile) { (Get-Content $VersionFile -Raw).Trim() } else { "" }
 if (-not (Test-Path $Binary) -or $InstalledVersion -ne $Version) {
     Write-Host "Downloading cc-discord-presence $Version for windows-amd64..."
 

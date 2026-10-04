@@ -40,6 +40,17 @@ claude plugin install cc-discord-presence@cc-discord-presence
 
 That's it! The plugin will automatically start when you begin a Claude Code session and stop when you exit.
 
+### Updating
+
+```bash
+claude plugin marketplace update cc-discord-presence
+claude plugin update cc-discord-presence@cc-discord-presence
+```
+
+Then start a new Claude Code session. The plugin's start script notices that the daemon in `~/.claude/bin/` is from an older release, stops it, downloads the matching one and starts it.
+
+> **Upgrading from 1.0.4 or earlier:** `claude plugin update` only replaces the plugin's own files. The daemon binary lives in `~/.claude/bin/` and, before 1.0.5, was downloaded once and never updated, so you may still be running the daemon from your first install. Updating to 1.0.5 fixes this automatically on your next session start. If Discord still doesn't show your project afterwards, delete `~/.claude/bin/cc-discord-presence-*` and start a new session. If you had set up the statusline integration, it keeps working, but on current Claude Code it's no longer needed.
+
 ### Manual Installation
 
 ```bash

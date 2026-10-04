@@ -108,7 +108,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines. Key points:
 - Shows nudge message when using JSONL fallback
 - Tokens shown are context size (the last request's input, cached tokens included), not a session total
 - Only pushes to Discord when the displayed text changes
-- start.sh/start.ps1 re-download the binary when `<binary>.version` doesn't match `VERSION`
+- start.sh/start.ps1 re-download the binary when `<binary>.version` doesn't match `VERSION`, and stop a running daemon from another release first
 
 ## Releasing
 
