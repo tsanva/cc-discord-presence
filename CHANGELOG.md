@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.4] - 2026-10-04
+
+### Added
+- Desktop app support: a hooks module (`hooks/register.ts`) writes `~/.claude/discord-presence-data.json` from Claude desktop app sessions, which have no statusline
+  - Previously the daemon kept showing whichever terminal session last wrote the file
+  - Terminal sessions, IDE extensions and headless runs are unchanged
+  - Claude Code versions without hooks module support ignore it
+
+### Fixed
+- `marketplace.json` entry version now matches `plugin.json`
+
 ## [1.0.3] - 2026-01-20
 
 ### Added

@@ -54,7 +54,7 @@ go build -o cc-discord-presence .
 
 ## How It Works
 
-The app reads session data from Claude Code in two ways:
+The app reads session data from Claude Code in two ways. In the Claude desktop app, which has no statusline, the plugin's hooks module (`hooks/register.ts`) writes the same data the statusline integration does, so no setup is needed there.
 
 ### 1. JSONL Fallback (Zero Config)
 
