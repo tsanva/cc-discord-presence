@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- `start.sh` and `stop.sh`, which the plugin hooks run on every platform (Windows included, through Git Bash), trust the pid file only when that pid is a `cc-discord-presence` process, as `start.ps1` and `stop.ps1` do since 1.0.6
+  - A pid reused after the daemon exited (reboot, Discord not running) made `start.sh` report the daemon as running without starting it, and `stop.sh` force-stop the unrelated program
+- On Windows the daemon's output now reaches `~/.claude/discord-presence.log`, which the README points to; `start.sh` discarded it, so a failed Discord connection left no trace
+  - The daemon writes the file itself (`--log <path>`): redirecting through `Start-Process` would make it inherit the hook's output pipe, and Claude Code would wait on the SessionStart hook until its timeout
+- On Windows the daemon kept running, and Discord kept showing the card, after every Claude Code session had closed
+  - SessionStart runs again after `/compact` (manual or automatic) with no SessionEnd to match, so the session refcount never got back to zero; a crashed session or a closed window did the same
+  - Sessions are now tracked with one marker per session id from the hook input, in `~/.claude/discord-presence-sessions/`, replacing `discord-presence.refcount`; a marker whose transcript hasn't changed for 12 hours is dropped
+- Reading a reply from Discord no longer assumes the whole frame arrives in one read; a frame split across reads was misparsed
+- The card no longer disappears for good when Discord starts after Claude Code, or quits or restarts (for an update) during a session
+  - The daemon exited when Discord wasn't running at startup, and never reconnected after losing the connection
+  - It now retries every 3 seconds, notices a closed connection even while the card text stays the same, and sends the current activity again after reconnecting
+- The JSONL fallback reads past transcript lines longer than 1 MB (large tool results); it stopped at the first one, so the card showed the model and token count from before it
+- The JSONL fallback's model name and cost were wrong for most sessions
+  - Models were looked up by exact ID in a table of four (one with an ID that doesn't exist), so current models showed as "Opus" and were priced as Sonnet 4; names now come from the model ID ("Opus 5.5"), Bedrock and Vertex AI forms included
+  - Prices are the current list prices, including cache writes (5-minute and 1-hour) and reads, which were ignored, fast mode and US-only inference; each response is priced by its own model
+  - Each response was counted once per content block, since Claude Code writes a line per block with the same usage
+  - A model without a known price leaves the cost off the card instead of guessing
+  - Claude Code's `<synthetic>` notices (API errors, interruptions) no longer replace the model and token count with "Claude" and 0
+- The card no longer shows a session that is over for as long as the daemon runs
+  - A session without activity for 15 minutes shows as "Idling in" while Claude Code is open in some terminal, and is cleared when Claude Code isn't running (it crashed, or its window closed without the SessionEnd hook)
+  - The daemon exits by itself 30 seconds after the last Claude Code process is gone
+- The elapsed timer counts from the start of the session, not of the daemon, which every session shares; from the JSONL fallback it counts from the first message after the last break of more than 15 minutes, so a resumed session doesn't show a day-long timer
+- Closing one Claude Code session no longer takes the card away while other sessions are still running but have no marker: those started before the plugin was installed, or by an older version of it
+  - `stop.sh` keeps the daemon while another Claude Code process runs
+  - `stop.sh` records ended sessions in `~/.claude/discord-presence-ended/`, and the daemon no longer shows a closed session because its transcript is the freshest, unless it is resumed
+- Sessions starting at the same time (several terminals opened at once) no longer start a daemon each; only the last was in the pid file, so the others were never stopped. `start.sh` now checks and starts the daemon under a lock, broken after a minute if a killed script left it
+
 ## [1.0.6] - 2026-10-12
 
 ### Fixed

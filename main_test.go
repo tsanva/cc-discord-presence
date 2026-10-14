@@ -1,145 +1,15 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/tsanva/cc-discord-presence/discord"
 )
-
-// TestCalculateCost tests the cost calculation logic
-func TestCalculateCost(t *testing.T) {
-	tests := []struct {
-		name         string
-		modelID      string
-		inputTokens  int64
-		outputTokens int64
-		wantCost     float64
-	}{
-		{
-			name:         "Opus 4.5 - basic usage",
-			modelID:      "claude-opus-4-5-20251101",
-			inputTokens:  1_000_000,
-			outputTokens: 100_000,
-			wantCost:     15.0 + 7.5, // $15/M input + $75/M * 0.1 output
-		},
-		{
-			name:         "Sonnet 4.5 - basic usage",
-			modelID:      "claude-sonnet-4-5-20241022",
-			inputTokens:  1_000_000,
-			outputTokens: 100_000,
-			wantCost:     3.0 + 1.5, // $3/M input + $15/M * 0.1 output
-		},
-		{
-			name:         "Sonnet 4 - basic usage",
-			modelID:      "claude-sonnet-4-20250514",
-			inputTokens:  500_000,
-			outputTokens: 50_000,
-			wantCost:     1.5 + 0.75, // $3/M * 0.5 input + $15/M * 0.05 output
-		},
-		{
-			name:         "Haiku 4.5 - basic usage",
-			modelID:      "claude-haiku-4-5-20241022",
-			inputTokens:  2_000_000,
-			outputTokens: 200_000,
-			wantCost:     2.0 + 1.0, // $1/M * 2 input + $5/M * 0.2 output
-		},
-		{
-			name:         "Unknown model - defaults to Sonnet 4",
-			modelID:      "claude-unknown-model-20991231",
-			inputTokens:  1_000_000,
-			outputTokens: 1_000_000,
-			wantCost:     3.0 + 15.0, // Sonnet 4 pricing as fallback
-		},
-		{
-			name:         "Zero tokens",
-			modelID:      "claude-opus-4-5-20251101",
-			inputTokens:  0,
-			outputTokens: 0,
-			wantCost:     0,
-		},
-		{
-			name:         "Small token count",
-			modelID:      "claude-sonnet-4-20250514",
-			inputTokens:  1000,
-			outputTokens: 500,
-			wantCost:     0.003 + 0.0075, // $3/M * 0.001 + $15/M * 0.0005
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := calculateCost(tt.modelID, tt.inputTokens, tt.outputTokens)
-			// Use approximate comparison for floating point
-			if diff := got - tt.wantCost; diff > 0.0001 || diff < -0.0001 {
-				t.Errorf("calculateCost(%q, %d, %d) = %v, want %v", tt.modelID, tt.inputTokens, tt.outputTokens, got, tt.wantCost)
-			}
-		})
-	}
-}
-
-// TestFormatModelName tests the model name formatting logic
-func TestFormatModelName(t *testing.T) {
-	tests := []struct {
-		name    string
-		modelID string
-		want    string
-	}{
-		{
-			name:    "Known model - Opus 4.5",
-			modelID: "claude-opus-4-5-20251101",
-			want:    "Opus 4.5",
-		},
-		{
-			name:    "Known model - Sonnet 4.5",
-			modelID: "claude-sonnet-4-5-20241022",
-			want:    "Sonnet 4.5",
-		},
-		{
-			name:    "Known model - Sonnet 4",
-			modelID: "claude-sonnet-4-20250514",
-			want:    "Sonnet 4",
-		},
-		{
-			name:    "Known model - Haiku 4.5",
-			modelID: "claude-haiku-4-5-20241022",
-			want:    "Haiku 4.5",
-		},
-		{
-			name:    "Unknown opus model - fallback",
-			modelID: "claude-opus-5-20260101",
-			want:    "Opus",
-		},
-		{
-			name:    "Unknown sonnet model - fallback",
-			modelID: "claude-sonnet-5-20260101",
-			want:    "Sonnet",
-		},
-		{
-			name:    "Unknown haiku model - fallback",
-			modelID: "claude-haiku-5-20260101",
-			want:    "Haiku",
-		},
-		{
-			name:    "Completely unknown model - defaults to Claude",
-			modelID: "some-unknown-model",
-			want:    "Claude",
-		},
-		{
-			name:    "Empty model ID",
-			modelID: "",
-			want:    "Claude",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := formatModelName(tt.modelID); got != tt.want {
-				t.Errorf("formatModelName(%q) = %q, want %q", tt.modelID, got, tt.want)
-			}
-		})
-	}
-}
 
 // TestFormatNumber tests the number formatting logic
 func TestFormatNumber(t *testing.T) {
@@ -559,23 +429,6 @@ func TestFindMostRecentJSONL(t *testing.T) {
 	})
 }
 
-// TestModelPricingConsistency ensures model pricing and display names are in sync
-func TestModelPricingConsistency(t *testing.T) {
-	// All models in pricing should have display names
-	for modelID := range modelPricing {
-		if _, ok := modelDisplayNames[modelID]; !ok {
-			t.Errorf("Model %q has pricing but no display name", modelID)
-		}
-	}
-
-	// All models in display names should have pricing
-	for modelID := range modelDisplayNames {
-		if _, ok := modelPricing[modelID]; !ok {
-			t.Errorf("Model %q has display name but no pricing", modelID)
-		}
-	}
-}
-
 // TestReadSessionDataPriority tests that the hooks module's file wins over the
 // statusline file, and that a blanked module file falls back to it.
 func TestReadSessionDataPriority(t *testing.T) {
@@ -661,11 +514,466 @@ func TestPresenceText(t *testing.T) {
 		ModelName:   "Opus 5.5",
 		TotalTokens: 54112,
 		TotalCost:   1.27,
+		CostKnown:   true,
 	})
 	if details != "Working on: kadens (main)" {
 		t.Errorf("details = %q", details)
 	}
 	if state != "Opus 5.5 | 54.1K tokens | $1.2700" {
 		t.Errorf("state = %q", state)
+	}
+}
+
+// The Windows start script hands the log path to the daemon instead of
+// redirecting its output (see start.sh).
+func TestSetupLogSendsOutputToFile(t *testing.T) {
+	origOut, origErr := os.Stdout, os.Stderr
+	path := filepath.Join(t.TempDir(), "discord-presence.log")
+
+	if err := setupLog([]string{"--log", path}); err != nil {
+		t.Fatalf("setupLog: %v", err)
+	}
+	fmt.Println("to stdout")
+	fmt.Fprintln(os.Stderr, "to stderr")
+	if os.Stdout != origOut {
+		os.Stdout.Close()
+	}
+	os.Stdout, os.Stderr = origOut, origErr
+
+	data, _ := os.ReadFile(path)
+	if !strings.Contains(string(data), "to stdout") || !strings.Contains(string(data), "to stderr") {
+		t.Errorf("log file holds %q, want both stdout and stderr output", data)
+	}
+}
+
+func TestSetupLogWithoutFlagKeepsOutput(t *testing.T) {
+	origOut := os.Stdout
+	if err := setupLog(nil); err != nil {
+		t.Fatalf("setupLog: %v", err)
+	}
+	if os.Stdout != origOut {
+		t.Error("setupLog without --log replaced os.Stdout")
+	}
+}
+
+// While Discord is away the client keeps the activity and sends it once it
+// reconnects, so the daemon must not retry (and log an error) every poll.
+func TestUpdatePresenceWhileDiscordIsAway(t *testing.T) {
+	origClient, origLast := discordClient, lastPresence
+	defer func() { discordClient, lastPresence = origClient, origLast }()
+	discordClient = discord.NewClient("test") // never connected
+	lastPresence = ""
+
+	updatePresence(&SessionData{ProjectName: "kadens", ModelName: "Opus 5.5", StartTime: time.Now()})
+
+	if lastPresence == "" {
+		t.Error("activity not recorded as handed over; every poll would resend it and log an error")
+	}
+}
+
+// Transcripts hold lines of several megabytes (large tool results). A
+// bufio.Scanner stops at its buffer limit and the rest of the file was
+// silently ignored, so the card showed an old model and token count.
+func TestParseJSONLSessionReadsPastLongLines(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "session.jsonl")
+	longLine := `{"type":"user","message":{"content":"` + strings.Repeat("x", 3<<20) + `"}}`
+	content := `{"type":"user","cwd":"/work/kadens"}` + "\n" +
+		`{"type":"assistant","message":{"model":"claude-haiku-4-5-20241022","usage":{"input_tokens":10}}}` + "\n" +
+		longLine + "\n" +
+		`{"type":"assistant","message":{"model":"claude-opus-4-5-20251101","usage":{"input_tokens":50000}}}` + "\n"
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	got := parseJSONLSession(path, "")
+
+	if got.ModelName != "Opus 4.5" || got.TotalTokens != 50000 {
+		t.Errorf("model = %q, tokens = %d; want the message after the long line (Opus 4.5, 50000)", got.ModelName, got.TotalTokens)
+	}
+}
+
+func TestFormatModelName(t *testing.T) {
+	tests := []struct {
+		modelID string
+		want    string
+	}{
+		{"claude-opus-4-5-20251101", "Opus 4.5"},
+		{"claude-sonnet-4-20250514", "Sonnet 4"},
+		{"claude-haiku-4-5-20251001", "Haiku 4.5"},
+		{"claude-opus-5", "Opus 5"},
+		{"claude-opus-5-5", "Opus 5.5"},
+		{"claude-fable-5-1", "Fable 5.1"},
+		{"claude-sonnet-5-20260101", "Sonnet 5"},
+		{"claude-3-5-haiku-20241022", "Haiku 3.5"},
+		{"claude-3-opus-20240229", "Opus 3"},
+		{"us.anthropic.claude-sonnet-4-5-20250929-v1:0", "Sonnet 4.5"}, // Bedrock
+		{"claude-opus-4-5@20251101", "Opus 4.5"},                       // Vertex AI
+		{"<synthetic>", "Claude"},
+		{"some-unknown-model", "Claude"},
+		{"", "Claude"},
+	}
+	for _, tt := range tests {
+		if got := formatModelName(tt.modelID); got != tt.want {
+			t.Errorf("formatModelName(%q) = %q, want %q", tt.modelID, got, tt.want)
+		}
+	}
+}
+
+// Prices from https://platform.claude.com/docs/en/about-claude/pricing
+func TestMessageCost(t *testing.T) {
+	const M = 1_000_000
+	tests := []struct {
+		name    string
+		modelID string
+		usage   Usage
+		want    float64
+	}{
+		{"input and output", "claude-opus-4-5-20251101", Usage{InputTokens: M, OutputTokens: M / 10}, 5 + 2.5},
+		{"older Opus", "claude-opus-4-1-20250805", Usage{InputTokens: M}, 15},
+		{"date-suffixed Sonnet 4", "claude-sonnet-4-20250514", Usage{InputTokens: M / 2, OutputTokens: M / 20}, 1.5 + 0.75},
+		{"old naming", "claude-3-5-haiku-20241022", Usage{InputTokens: M}, 0.8},
+		{"output", "claude-opus-5-5", Usage{OutputTokens: M}, 20},
+		{"cache read at 0.05x", "claude-opus-5-5", Usage{CacheReadInputTokens: M}, 0.20},
+		{"cache read at 0.025x", "claude-fable-5-1", Usage{CacheReadInputTokens: M}, 0.25},
+		{"cache read at 0.1x", "claude-sonnet-4-6", Usage{CacheReadInputTokens: M}, 0.30},
+		{"1h cache write at 2x", "claude-opus-5-5", Usage{CacheCreationInputTokens: M, CacheCreation: CacheCreation{Ephemeral1h: M}}, 8},
+		{"5m cache write at 1.25x", "claude-opus-5-5", Usage{CacheCreationInputTokens: M, CacheCreation: CacheCreation{Ephemeral5m: M}}, 5},
+		{"cache write without TTL split is 5m", "claude-opus-4-5-20251101", Usage{CacheCreationInputTokens: M}, 6.25},
+		{"fast mode", "claude-opus-5-5", Usage{InputTokens: M, OutputTokens: M, Speed: "fast"}, 8 + 40},
+		{"fast mode cache read", "claude-opus-5", Usage{CacheReadInputTokens: M, Speed: "fast"}, 1},
+		{"US-only inference on 4.6+", "claude-opus-4-6", Usage{InputTokens: M, InferenceGeo: "us"}, 5.5},
+		{"US-only inference before 4.6", "claude-haiku-4-5-20251001", Usage{InputTokens: M, InferenceGeo: "us"}, 1},
+		{"Haiku 5.5 short prompt", "claude-haiku-5-5", Usage{InputTokens: 50_000}, 0.005},
+		{"Haiku 5.5 prompt over 100k", "claude-haiku-5-5", Usage{InputTokens: 50_000, CacheReadInputTokens: 100_000}, 0.025 + 0.005},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, ok := messageCost(tt.modelID, tt.usage)
+			if !ok {
+				t.Fatalf("messageCost(%q) has no price", tt.modelID)
+			}
+			if diff := got - tt.want; diff > 1e-9 || diff < -1e-9 {
+				t.Errorf("messageCost(%q, %+v) = %v, want %v", tt.modelID, tt.usage, got, tt.want)
+			}
+		})
+	}
+
+	if _, ok := messageCost("claude-unknown-9", Usage{InputTokens: M}); ok {
+		t.Error("an unknown model got a price; the card should show no cost rather than a guess")
+	}
+}
+
+func writeTranscript(t *testing.T, lines ...string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "session.jsonl")
+	if err := os.WriteFile(path, []byte(strings.Join(lines, "\n")+"\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+// Claude Code writes one line per content block of a response (thinking,
+// text, each tool call), all carrying the same message id and usage.
+func TestParseJSONLSessionCountsEachMessageOnce(t *testing.T) {
+	block := `{"type":"assistant","message":{"id":"msg_1","model":"claude-opus-5-5","usage":{"input_tokens":2,"cache_creation_input_tokens":1000000,"cache_read_input_tokens":0,"output_tokens":1000000,"cache_creation":{"ephemeral_1h_input_tokens":1000000,"ephemeral_5m_input_tokens":0}}}}`
+	path := writeTranscript(t,
+		`{"type":"user","cwd":"/work/kadens"}`,
+		block, block, block,
+		`{"type":"assistant","message":{"id":"msg_2","model":"claude-opus-5-5","usage":{"input_tokens":3,"cache_creation_input_tokens":0,"cache_read_input_tokens":1000000,"output_tokens":0}}}`,
+	)
+
+	got := parseJSONLSession(path, "")
+
+	// msg_1: 1M 1h write ($8) + 1M output ($20); msg_2: 1M cache read ($0.20)
+	want := 8 + 20 + 0.20 + float64(2+3)*4/1_000_000
+	if diff := got.TotalCost - want; diff > 1e-9 || diff < -1e-9 || !got.CostKnown {
+		t.Errorf("TotalCost = %v (known %v), want %v", got.TotalCost, got.CostKnown, want)
+	}
+	if got.ModelName != "Opus 5.5" {
+		t.Errorf("ModelName = %q, want %q", got.ModelName, "Opus 5.5")
+	}
+	if got.TotalTokens != 1_000_003 {
+		t.Errorf("TotalTokens = %d, want the last request's context, 1000003", got.TotalTokens)
+	}
+}
+
+// Claude Code records API errors and interruptions as assistant messages
+// with model "<synthetic>" and zero usage.
+func TestParseJSONLSessionIgnoresSyntheticMessages(t *testing.T) {
+	path := writeTranscript(t,
+		`{"type":"user","cwd":"/work/kadens"}`,
+		`{"type":"assistant","message":{"id":"msg_1","model":"claude-opus-5-5","usage":{"input_tokens":5,"cache_read_input_tokens":40000,"output_tokens":10}}}`,
+		`{"type":"assistant","message":{"id":"msg_2","model":"<synthetic>","usage":{"input_tokens":0,"output_tokens":0}}}`,
+	)
+
+	got := parseJSONLSession(path, "")
+
+	if got.ModelName != "Opus 5.5" || got.TotalTokens != 40005 {
+		t.Errorf("model = %q, tokens = %d; want Opus 5.5 and 40005 from the last real response", got.ModelName, got.TotalTokens)
+	}
+}
+
+func TestParseJSONLSessionUnknownModelHasNoCost(t *testing.T) {
+	path := writeTranscript(t,
+		`{"type":"user","cwd":"/work/kadens"}`,
+		`{"type":"assistant","message":{"id":"msg_1","model":"claude-future-9","usage":{"input_tokens":1000}}}`,
+	)
+
+	if got := parseJSONLSession(path, ""); got.CostKnown {
+		t.Errorf("CostKnown = true with TotalCost %v for a model without a price", got.TotalCost)
+	}
+}
+
+func TestPresenceTextWithoutCost(t *testing.T) {
+	_, state := presenceText(&SessionData{ModelName: "Claude", TotalTokens: 54112})
+	if state != "Claude | 54.1K tokens" {
+		t.Errorf("state = %q, want the cost left out", state)
+	}
+}
+
+// The hooks module and statusline report Claude Code's own cost figure.
+func TestReadPresenceFileCostIsKnown(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "module.json")
+	os.WriteFile(path, []byte(`{"session_id":"s1","cwd":"/work/kadens","model":{"display_name":"Opus 5.5"},"cost":{"total_cost_usd":1.27}}`), 0644)
+
+	got := readPresenceFile(path)
+
+	if got == nil || !got.CostKnown || got.TotalCost != 1.27 {
+		t.Errorf("readPresenceFile = %+v, want TotalCost 1.27 marked known", got)
+	}
+}
+
+func TestSessionDataCarriesLastActivity(t *testing.T) {
+	hourAgo := time.Now().Add(-time.Hour).Truncate(time.Second)
+
+	module := filepath.Join(t.TempDir(), "module.json")
+	os.WriteFile(module, []byte(`{"session_id":"s1","cwd":"/work/kadens"}`), 0644)
+	os.Chtimes(module, hourAgo, hourAgo)
+	if got := readPresenceFile(module); got == nil || !got.LastActivity.Equal(hourAgo) {
+		t.Errorf("readPresenceFile LastActivity = %v, want the file's mtime %v", got, hourAgo)
+	}
+
+	transcript := writeTranscript(t,
+		`{"type":"user","cwd":"/work/kadens"}`,
+		`{"type":"assistant","message":{"id":"m1","model":"claude-opus-5-5","usage":{"input_tokens":1}}}`)
+	os.Chtimes(transcript, hourAgo, hourAgo)
+	if got := parseJSONLSession(transcript, ""); got == nil || !got.LastActivity.Equal(hourAgo) {
+		t.Errorf("parseJSONLSession LastActivity = %v, want the file's mtime %v", got, hourAgo)
+	}
+}
+
+// useSessionFiles points the daemon at empty session data in a temp dir and a
+// Discord client that isn't connected, restoring both afterwards.
+func useSessionFiles(t *testing.T) (module string) {
+	t.Helper()
+	origData, origModule, origProjects := dataFilePath, moduleFilePath, projectsDir
+	origClient, origLast, origNudge := discordClient, lastPresence, nudgeShown
+	origProcesses := claudeCodeProcesses
+	t.Cleanup(func() {
+		dataFilePath, moduleFilePath, projectsDir = origData, origModule, origProjects
+		discordClient, lastPresence, nudgeShown = origClient, origLast, origNudge
+		claudeCodeProcesses = origProcesses
+	})
+	claudeCodeProcesses = func() []int { return []int{4242} } // one session open
+	dir := t.TempDir()
+	dataFilePath = filepath.Join(dir, "discord-presence-data.json")
+	moduleFilePath = filepath.Join(dir, "discord-presence-module.json")
+	projectsDir = filepath.Join(dir, "projects")
+	discordClient = discord.NewClient("test")
+	nudgeShown = true
+	return moduleFilePath
+}
+
+func TestRefreshPresenceClearsCardWithoutSession(t *testing.T) {
+	useSessionFiles(t)
+	lastPresence = "Working on: kadens"
+
+	refreshPresence()
+
+	if lastPresence != "" {
+		t.Errorf("card not cleared with no session data (lastPresence %q)", lastPresence)
+	}
+}
+
+func TestRefreshPresenceShowsActiveSession(t *testing.T) {
+	module := useSessionFiles(t)
+	os.WriteFile(module, []byte(`{"session_id":"s1","cwd":"/work/kadens","model":{"display_name":"Opus 5.5"}}`), 0644)
+
+	refreshPresence()
+
+	if !strings.Contains(lastPresence, "kadens") {
+		t.Errorf("active session not shown (lastPresence %q)", lastPresence)
+	}
+}
+
+// A crashed session, or one whose terminal was closed without its SessionEnd
+// hook, must not keep the card.
+func TestRefreshPresenceClearsIdleSessionWhenClaudeCodeIsClosed(t *testing.T) {
+	module := useSessionFiles(t)
+	claudeCodeProcesses = func() []int { return nil }
+	os.WriteFile(module, []byte(`{"session_id":"s1","cwd":"/work/kadens","model":{"display_name":"Opus 5.5"}}`), 0644)
+	longAgo := time.Now().Add(-IdleTimeout - time.Minute)
+	os.Chtimes(module, longAgo, longAgo)
+	lastPresence = "Working on: kadens"
+
+	refreshPresence()
+
+	if lastPresence != "" {
+		t.Errorf("card kept for a session idle longer than IdleTimeout (lastPresence %q)", lastPresence)
+	}
+}
+
+func TestSessionIsIdle(t *testing.T) {
+	now := time.Now()
+	tests := []struct {
+		name     string
+		lastSeen time.Duration // before now
+		want     bool
+	}{
+		{"just active", time.Minute, false},
+		{"inside the timeout", IdleTimeout - time.Minute, false},
+		{"past the timeout", IdleTimeout + time.Minute, true},
+		{"a day ago", 24 * time.Hour, true},
+	}
+	for _, tt := range tests {
+		session := &SessionData{LastActivity: now.Add(-tt.lastSeen)}
+		if got := sessionIsIdle(session, now); got != tt.want {
+			t.Errorf("%s: sessionIsIdle = %v, want %v", tt.name, got, tt.want)
+		}
+	}
+}
+
+func TestSessionIsIdleWithoutActivityTime(t *testing.T) {
+	if sessionIsIdle(&SessionData{}, time.Now()) {
+		t.Error("a session with no known activity time was hidden as idle")
+	}
+}
+
+// The elapsed timer showed how long the daemon had run, which is shared by
+// every session and survives none of them.
+func TestReadPresenceFileStartsTimerAtSessionStart(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "module.json")
+	os.WriteFile(path, []byte(`{"session_id":"s1","cwd":"/work/kadens","cost":{"total_duration_ms":7200000}}`), 0644)
+	written := time.Now().Add(-time.Minute).Truncate(time.Second)
+	os.Chtimes(path, written, written)
+
+	got := readPresenceFile(path)
+
+	if want := written.Add(-2 * time.Hour); got == nil || !got.StartTime.Equal(want) {
+		t.Errorf("StartTime = %v, want %v (written 2h into the session)", got.StartTime, want)
+	}
+}
+
+func transcriptLine(typ string, at time.Time) string {
+	return `{"type":"` + typ + `","cwd":"/work/kadens","timestamp":"` + at.UTC().Format(time.RFC3339Nano) + `",` +
+		`"message":{"id":"m` + at.Format("150405") + `","model":"claude-opus-5-5","usage":{"input_tokens":1}}}`
+}
+
+func TestParseJSONLSessionStartsTimerAtFirstMessage(t *testing.T) {
+	start := time.Date(2026, 10, 14, 9, 0, 0, 0, time.UTC)
+	path := writeTranscript(t,
+		transcriptLine("user", start),
+		transcriptLine("assistant", start.Add(5*time.Minute)),
+		transcriptLine("assistant", start.Add(5*time.Minute+IdleTimeout-time.Second))) // a gap just inside
+
+	if got := parseJSONLSession(path, ""); !got.StartTime.Equal(start) {
+		t.Errorf("StartTime = %v, want the first message at %v", got.StartTime, start)
+	}
+}
+
+// A session resumed after a break (the next morning, after lunch) starts a
+// new stretch of work rather than showing "20:00:00 elapsed".
+func TestParseJSONLSessionRestartsTimerAfterIdleGap(t *testing.T) {
+	start := time.Date(2026, 10, 14, 9, 0, 0, 0, time.UTC)
+	resumed := start.Add(IdleTimeout + time.Hour)
+	path := writeTranscript(t,
+		transcriptLine("user", start),
+		transcriptLine("assistant", start.Add(5*time.Minute)),
+		transcriptLine("user", resumed),
+		transcriptLine("assistant", resumed.Add(2*time.Minute)))
+
+	if got := parseJSONLSession(path, ""); !got.StartTime.Equal(resumed) {
+		t.Errorf("StartTime = %v, want the resumed stretch at %v", got.StartTime, resumed)
+	}
+}
+
+// stop.sh records ended sessions; their transcripts are the freshest right
+// after they close, but the card should move on to a session still running.
+func TestFindMostRecentJSONLSkipsEndedSessions(t *testing.T) {
+	origProjects, origEnded := projectsDir, endedDir
+	defer func() { projectsDir, endedDir = origProjects, origEnded }()
+	dir := t.TempDir()
+	projectsDir, endedDir = filepath.Join(dir, "projects"), filepath.Join(dir, "ended")
+	os.MkdirAll(filepath.Join(projectsDir, "C--work-kadens"), 0755)
+	os.MkdirAll(endedDir, 0755)
+
+	write := func(path string, age time.Duration) {
+		os.WriteFile(path, []byte("{}\n"), 0644)
+		at := time.Now().Add(-age)
+		os.Chtimes(path, at, at)
+	}
+	running := filepath.Join(projectsDir, "C--work-kadens", "running.jsonl")
+	closed := filepath.Join(projectsDir, "C--work-kadens", "closed.jsonl")
+	write(running, 5*time.Minute)
+	write(closed, time.Minute)
+	write(filepath.Join(endedDir, "closed"), 0)
+
+	if got, _, _ := findMostRecentJSONL(); got != running {
+		t.Errorf("picked %s, want the session still running", filepath.Base(got))
+	}
+
+	// Resumed after it ended: its transcript changes again
+	write(closed, -time.Minute)
+	if got, _, _ := findMostRecentJSONL(); got != closed {
+		t.Errorf("picked %s, want the resumed session", filepath.Base(got))
+	}
+}
+
+// While Claude Code is open in some terminal, an idle session shows as idle,
+// as editor integrations do, rather than disappearing.
+func TestRefreshPresenceShowsIdleSessionWhileClaudeCodeIsOpen(t *testing.T) {
+	module := useSessionFiles(t)
+	os.WriteFile(module, []byte(`{"session_id":"s1","cwd":"/work/kadens","model":{"display_name":"Opus 5.5"}}`), 0644)
+	longAgo := time.Now().Add(-IdleTimeout - time.Minute)
+	os.Chtimes(module, longAgo, longAgo)
+
+	refreshPresence()
+
+	if !strings.HasPrefix(lastPresence, "Idling in: kadens") {
+		t.Errorf("idle session with Claude Code open shown as %q, want it idling", lastPresence)
+	}
+}
+
+func TestPresenceTextIdle(t *testing.T) {
+	details, _ := presenceText(&SessionData{ProjectName: "kadens", GitBranch: "main", Idle: true})
+	if details != "Idling in: kadens (main)" {
+		t.Errorf("details = %q", details)
+	}
+}
+
+// The daemon outlives a terminal closed without its SessionEnd hook (window
+// closed, crash); it stops once Claude Code is gone everywhere.
+func TestClaudeCodeGone(t *testing.T) {
+	orig := claudeCodeProcesses
+	origSeen, origLastSeen := sawClaudeCode, lastSawClaudeCode
+	defer func() { claudeCodeProcesses, sawClaudeCode, lastSawClaudeCode = orig, origSeen, origLastSeen }()
+	sawClaudeCode, lastSawClaudeCode = false, time.Time{}
+	var running []int
+	claudeCodeProcesses = func() []int { return running }
+	now := time.Now()
+
+	if claudeCodeGone(now.Add(time.Hour)) {
+		t.Error("gone although no Claude Code process was ever found: on such a system the hooks stop the daemon")
+	}
+	running = []int{4242}
+	if claudeCodeGone(now) {
+		t.Error("gone while Claude Code runs")
+	}
+	running = nil
+	if claudeCodeGone(now.Add(ExitGrace - time.Second)) {
+		t.Error("gone before ExitGrace passed")
+	}
+	if !claudeCodeGone(now.Add(ExitGrace + time.Second)) {
+		t.Error("not gone after Claude Code closed everywhere for longer than ExitGrace")
 	}
 }

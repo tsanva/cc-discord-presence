@@ -449,3 +449,33 @@ func TestFrameFormat(t *testing.T) {
 func timePtr(t time.Time) *time.Time {
 	return &t
 }
+
+// chunkConn hands out at most n bytes per Read, as a pipe does when the
+// writer's frame arrives in pieces.
+type chunkConn struct {
+	mockConn
+	n int
+}
+
+func (c *chunkConn) Read(b []byte) (int, error) {
+	if len(b) > c.n {
+		b = b[:c.n]
+	}
+	return c.mockConn.Read(b)
+}
+
+func TestClient_receive_ShortReads(t *testing.T) {
+	client := NewClient("test")
+	conn := &chunkConn{n: 5}
+	client.conn = conn
+	payload := []byte(`{"cmd":"DISPATCH","evt":"READY"}`)
+	conn.writeFrame(opFrame, payload)
+
+	got, err := client.receive()
+	if err != nil {
+		t.Fatalf("receive() error: %v", err)
+	}
+	if !bytes.Equal(got, payload) {
+		t.Errorf("receive() with 5-byte reads = %q, want %q", got, payload)
+	}
+}

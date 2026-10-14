@@ -67,17 +67,17 @@ cc-discord-presence/
 
 ### Session Tracking (Platform-specific)
 - **macOS/Linux**: PID-based tracking via files in `~/.claude/discord-presence-sessions/`
-- **Windows**: Refcount-based tracking via `~/.claude/discord-presence.refcount` (PPID unreliable on Windows)
+- **Windows**: One marker per session id in `~/.claude/discord-presence-sessions/`, read from the hook input (PPID unreliable on Windows). SessionStart runs again after `/compact` for the same id, so markers can't drift the way a refcount did. A marker whose transcript hasn't changed for 12 hours is dropped (a crashed session never runs SessionEnd)
+- **Both**: Sessions started before the plugin was installed (or by an older version) have no marker. When the last marker goes, `stop.sh` still keeps the daemon while another Claude Code process runs (`claude.exe` / `claude`; the ending session's own process counts as one). `stop.sh` records ended sessions in `~/.claude/discord-presence-ended/` (one file per session id); the JSONL fallback skips them unless their transcript changed after they ended (resumed)
+- **Daemon**: lists running Claude Code processes itself (`claudecode_*.go`; on Windows it skips the desktop app, also `claude.exe`, under `AnthropicClaude`) and exits `ExitGrace` (30 s) after the last one is gone, which covers windows closed without SessionEnd. It never exits that way on a system where it never found a Claude Code process
 
 ### Model Pricing (Update when new models release)
-Located at top of `main.go` in `modelPricing` and `modelDisplayNames` maps.
+Located at top of `main.go` in `modelPrices`, keyed by display name ("Opus 4.5"), which `formatModelName` derives from any model ID (including Bedrock and Vertex AI forms). Prices come from https://platform.claude.com/docs/en/about-claude/pricing.
 
-| Model | Input $/1M | Output $/1M |
-|-------|-----------|-------------|
-| Opus 4.5 | $15 | $75 |
-| Sonnet 4.5 | $3 | $15 |
-| Sonnet 4 | $3 | $15 |
-| Haiku 4.5 | $1 | $5 |
+- Only the JSONL fallback uses it; the hooks module and statusline report Claude Code's own cost
+- Each response is priced by its own model: input, 5-minute (1.25x) and 1-hour (2x) cache writes, cache reads (per-model multiplier), output, plus fast mode, US-only inference (1.1x on 4.6+) and Haiku 5.5's long-prompt prices
+- Claude Code writes one JSONL line per content block, each repeating the response's usage: count each `message.id` once
+- A model missing from the table leaves the cost off the card instead of guessing
 
 ## Development Commands
 
@@ -103,11 +103,13 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines. Key points:
 ## Important Notes
 
 - Polls every 3 seconds + uses file watcher
-- Discord must be running for RPC to connect
+- Discord must be running for RPC to connect; the daemon connects whenever Discord starts, reconnects after it restarts, and then sends the current activity again
 - Graceful shutdown on SIGINT/SIGTERM
 - Shows nudge message when using JSONL fallback
 - Tokens shown are context size (the last request's input, cached tokens included), not a session total
 - Only pushes to Discord when the displayed text changes
+- A session whose data hasn't changed for `IdleTimeout` (15 minutes, longer than Claude Code's 10-minute cap on a Bash command) shows as "Idling in" while Claude Code runs, and is cleared when it doesn't; no session data clears the card
+- start.sh checks for and starts the daemon under a lock (`~/.claude/discord-presence.lock`, a directory), so sessions starting together don't each start one
 - start.sh/start.ps1 re-download the binary when `<binary>.version` doesn't match `VERSION`, and stop a running daemon from another release first
 
 ## Releasing
